@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="mn">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SOS Medica AI Chatbot - Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/assets/styles/shared.css" />
+    <link rel="stylesheet" href="/assets/styles/chat.css" />
+  </head>
+  <body class="chat-body">
+    <div class="background-orb orb-left"></div>
+    <div class="background-orb orb-right"></div>
+
+    <main class="chat-shell">
+      <section class="app-layout">
+        <aside class="sidebar">
+          <div class="sidebar-brand">
+            <div class="mini-badge">
+              <svg viewBox="0 0 64 64" role="img">
+                <path
+                  d="M17 25a11 11 0 0 1 21.3-3.5A9 9 0 1 1 40 39H19a7 7 0 0 1-2-14Z"
+                  fill="#4592ff"
+                />
+                <path d="M12 28h22a6 6 0 0 1 6 6v15H12V28Z" fill="#2f67d8" />
+                <rect x="32" y="22" width="20" height="16" rx="2.5" fill="#ffd056" />
+                <circle cx="42.5" cy="30" r="4.25" fill="none" stroke="#3f4a68" stroke-width="2.8" />
+                <path d="m46.2 33.7 4.3 4.3" stroke="#3f4a68" stroke-linecap="round" stroke-width="2.8" />
+              </svg>
+            </div>
+            <div>
+              <p class="eyebrow">SOS Medica</p>
+              <h2>Document AI</h2>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-title-row">
+              <div>
+                <h3 id="user-name">Хэрэглэгч</h3>
+                <p id="user-email" class="panel-caption"></p>
+              </div>
+              <span id="role-badge" class="role-badge"></span>
+            </div>
+            <button id="new-chat-button" class="ghost-button full-width" type="button">
+              Шинэ чат
+            </button>
+          </div>
+
+          <div class="panel compact">
+            <div class="panel-title-row">
+              <h3>Saved Chats</h3>
+              <span id="history-count" class="pill-muted"></span>
+            </div>
+            <div id="history-list" class="history-list"></div>
+          </div>
+
+          <div id="documents-panel" class="panel compact">
+            <div class="panel-title-row">
+              <h3>Индексэлсэн файлууд</h3>
+              <span id="doc-count" class="pill-muted"></span>
+            </div>
+            <div id="document-list" class="document-list"></div>
+          </div>
+
+          <div id="admin-upload-panel" class="panel compact hidden">
+            <div class="panel-title-row">
+              <h3>Admin Upload</h3>
+              <span class="pill-muted">TXT / MD / JSON / CSV</span>
+            </div>
+            <label class="upload-card" for="file-input">
+              <input id="file-input" type="file" accept=".txt,.md,.json,.csv,.pdf" multiple hidden />
+              <strong>Файл нэмэх</strong>
+              <span>TXT, CSV, JSON, MD болон PDF файл серверийн data/uploads дотор хадгалагдаж, knowledge base-д бүртгэгдэнэ.</span>
+            </label>
+          </div>
+
+          <div class="panel compact">
+            <h3>Түргэн асуултууд</h3>
+            <div id="prompt-list" class="prompt-list"></div>
+          </div>
+        </aside>
+
+        <section class="chat-stage">
+          <header class="chat-header">
+            <div>
+              <p class="eyebrow">Realtime assistant</p>
+              <h2 id="current-chat-title">Шинэ чат</h2>
+            </div>
+            <div class="header-actions">
+              <button id="logout-button" class="icon-button" type="button" aria-label="Logout" title="Logout">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                  />
+                  <path
+                    d="M14 8l4 4-4 4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                  />
+                  <path
+                    d="M9 12h9"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                  />
+                </svg>
+              </button>
+            </div>
+          </header>
+
+          <p id="app-notice" class="app-notice" aria-live="polite"></p>
+          <div id="chat-log" class="chat-log" aria-live="polite"></div>
+
+          <form id="composer" class="composer">
+            <textarea id="message-input" rows="1" placeholder="Асуултаа энд бичнэ үү..."></textarea>
+            <button id="send-button" class="primary-button composer-button" type="submit">
+              Send
+            </button>
+          </form>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/assets/scripts/chat.js"></script>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "sosmedica-ai-chatbot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "python3 app.py",
+    "backend": "python3 app.py",
+    "frontend": "npm --prefix web run dev",
+    "frontend:build": "npm --prefix web run build",
+    "frontend:start": "npm --prefix web run start"
+  }
+}

@@ -1,0 +1,16 @@
+[
+  {
+    "id": "5e69f598-dfa7-431e-9815-520b108fb676",
+    "email": "admin@sosmedica.mn",
+    "password": "admin123",
+    "role": "admin",
+    "name": "System Admin"
+  },
+  {
+    "id": "e5071fb1-ec17-4322-a994-178218354b29",
+    "email": "staff@sosmedica.mn",
+    "password": "staff123",
+    "role": "staff",
+    "name": "Clinical Staff"
+  }
+]
