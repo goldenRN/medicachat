@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import shutil
 import subprocess
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
@@ -33,7 +33,7 @@ def parse_uploaded_file(file_payload: dict[str, str], uploader_email: str) -> di
     folder_path = UPLOAD_DIR / folder_storage_name(folder_name)
     folder_path.mkdir(parents=True, exist_ok=True)
     extension = Path(safe_name).suffix.lower()
-    saved_name = f"{int(datetime.now(UTC).timestamp() * 1000)}-{safe_name}"
+    saved_name = f"{int(datetime.now(timezone.utc).timestamp() * 1000)}-{safe_name}"
     saved_path = folder_path / saved_name
     relative_storage_path = build_storage_path(folder_name, saved_name)
 
@@ -248,7 +248,7 @@ def copy_document_storage(document: dict[str, object], target_folder: str) -> st
 
     destination_dir = UPLOAD_DIR / folder_storage_name(target_folder)
     destination_dir.mkdir(parents=True, exist_ok=True)
-    copied_name = f"{int(datetime.now(UTC).timestamp() * 1000)}-{sanitize_filename(document['title'])}"
+    copied_name = f"{int(datetime.now(timezone.utc).timestamp() * 1000)}-{sanitize_filename(document['title'])}"
     destination = destination_dir / copied_name
     shutil.copy2(source, destination)
     return build_storage_path(target_folder, copied_name)

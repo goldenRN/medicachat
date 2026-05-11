@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -77,7 +77,7 @@ SEED_DOCUMENTS = [
         "summary": "Яаралтай тусламжийн шатлал, улаан/шар/ногоон ангиллын ерөнхий заавар.",
         "content": "Улаан ангилалд амьсгалын дутагдал, зүрхний тогтворгүй байдал, шок орно. Шар ангилалд ойрын үнэлгээ шаардлагатай тогтвортой боловч эрсдэлтэй тохиолдлууд хамаарна. Ногоон ангилалд хүлээлгэж болох хөнгөн шинж тэмдэгтэй тохиолдол орно.",
         "tags": ["triage", "emergency", "classification"],
-        "createdAt": datetime.now(UTC).isoformat(),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
     },
     {
         "id": str(uuid4()),
@@ -86,7 +86,7 @@ SEED_DOCUMENTS = [
         "summary": "Хэвтэн эмчлүүлэхийн өмнөх бүртгэл, зөвшөөрөл, даатгалын шалгах хуудас.",
         "content": "Хэвтэн эмчлүүлэхийн өмнө иргэний үнэмлэх, даатгалын мэдээлэл, эмийн харшлын асуумж, зөвшөөрлийн маягтыг баталгаажуулна. Өвчтөнд хоол, эмийн зааврыг урьдчилан тайлбарлана.",
         "tags": ["admission", "checklist", "insurance"],
-        "createdAt": datetime.now(UTC).isoformat(),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
     },
     {
         "id": str(uuid4()),
@@ -95,7 +95,7 @@ SEED_DOCUMENTS = [
         "summary": "Гар ариутгал, хамгаалах хэрэгсэл, тусгаарлалтын дэглэмийн үндсэн бодлого.",
         "content": "Өвчтөнтэй хүрэлцэхийн өмнө болон дараа гар ариутгана. Дуслын халдварын сэжигтэй үед маск, нүдний хамгаалалт хэрэглэнэ. Өндөр эрсдэлтэй орчинд нэг удаагийн бээлий, халат заавал хэрэглэнэ.",
         "tags": ["infection", "ppe", "policy"],
-        "createdAt": datetime.now(UTC).isoformat(),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
     },
     {
         "id": str(uuid4()),
@@ -104,7 +104,7 @@ SEED_DOCUMENTS = [
         "summary": "Дүрс оношилгооны өмнөх бэлтгэл, өлөн ирэх эсэх, тодосгогч бодисын асуумж.",
         "content": "Тодосгогч бодистой шинжилгээний өмнө бөөрний үзүүлэлт болон харшлын түүхийг асууна. Зарим шинжилгээнд 6-8 цаг өлөн байх шаардлагатай. Жирэмсний эрсдэлийг асуумжаар тодруулна.",
         "tags": ["radiology", "contrast", "preparation"],
-        "createdAt": datetime.now(UTC).isoformat(),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
     },
 ]
 
