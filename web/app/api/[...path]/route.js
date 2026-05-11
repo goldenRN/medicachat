@@ -1,5 +1,10 @@
-const BACKEND_BASE_URL =
-  process.env.BACKEND_API_BASE_URL || "http://127.0.0.1:4173/api";
+function getBackendBaseUrl() {
+  const configuredBase = process.env.BACKEND_API_BASE_URL || "http://127.0.0.1:4173/api";
+  const normalizedBase = configuredBase.replace(/\/+$/, "");
+  return normalizedBase.endsWith("/api") ? normalizedBase : `${normalizedBase}/api`;
+}
+
+const BACKEND_BASE_URL = getBackendBaseUrl();
 
 async function proxy(request, { params }) {
   const routeParams = await params;
