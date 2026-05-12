@@ -24,6 +24,154 @@ const EMPTY_STATE = {
   messages: [],
 };
 
+function renderInlineMarkup(text, keyPrefix) {
+  const nodes = [];
+  const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/g;
+  let lastIndex = 0;
+  let match;
+  let index = 0;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    if (token.startsWith("**") && token.endsWith("**")) {
+      nodes.push(
+        <strong key={`${keyPrefix}-strong-${index}`}>{token.slice(2, -2)}</strong>,
+      );
+    } else {
+      const linkMatch = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
+      if (linkMatch) {
+        nodes.push(
+          <a
+            key={`${keyPrefix}-link-${index}`}
+            href={linkMatch[2]}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {linkMatch[1]}
+          </a>,
+        );
+      } else {
+        nodes.push(token);
+      }
+    }
+
+    lastIndex = pattern.lastIndex;
+    index += 1;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
+function renderStructuredMessage(text) {
+  const lines = String(text || "").split("\n");
+  const elements = [];
+  let paragraph = [];
+  let bulletItems = [];
+  let numberedItems = [];
+  let key = 0;
+
+  function flushParagraph() {
+    if (!paragraph.length) {
+      return;
+    }
+    const joined = paragraph.join(" ").trim();
+    if (joined) {
+      elements.push(
+        <p key={`p-${key}`} className="rich-text-paragraph">
+          {renderInlineMarkup(joined, `p-${key}`)}
+        </p>,
+      );
+      key += 1;
+    }
+    paragraph = [];
+  }
+
+  function flushBullets() {
+    if (!bulletItems.length) {
+      return;
+    }
+    elements.push(
+      <ul key={`ul-${key}`} className="rich-text-list">
+        {bulletItems.map((item, itemIndex) => (
+          <li key={`ul-${key}-${itemIndex}`}>{renderInlineMarkup(item, `ul-${key}-${itemIndex}`)}</li>
+        ))}
+      </ul>,
+    );
+    key += 1;
+    bulletItems = [];
+  }
+
+  function flushNumbered() {
+    if (!numberedItems.length) {
+      return;
+    }
+    elements.push(
+      <ol key={`ol-${key}`} className="rich-text-list rich-text-ordered">
+        {numberedItems.map((item, itemIndex) => (
+          <li key={`ol-${key}-${itemIndex}`}>{renderInlineMarkup(item, `ol-${key}-${itemIndex}`)}</li>
+        ))}
+      </ol>,
+    );
+    key += 1;
+    numberedItems = [];
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (!line) {
+      flushParagraph();
+      flushBullets();
+      flushNumbered();
+      continue;
+    }
+
+    if (/^[-*•]\s+/.test(line)) {
+      flushParagraph();
+      flushNumbered();
+      bulletItems.push(line.replace(/^[-*•]\s+/, "").trim());
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(line)) {
+      flushParagraph();
+      flushBullets();
+      numberedItems.push(line.replace(/^\d+\.\s+/, "").trim());
+      continue;
+    }
+
+    flushBullets();
+    flushNumbered();
+
+    if (/^\*\*.+\*\*$/.test(line)) {
+      flushParagraph();
+      elements.push(
+        <p key={`heading-${key}`} className="rich-text-heading">
+          {renderInlineMarkup(line, `heading-${key}`)}
+        </p>,
+      );
+      key += 1;
+      continue;
+    }
+
+    paragraph.push(line);
+  }
+
+  flushParagraph();
+  flushBullets();
+  flushNumbered();
+
+  return elements;
+}
+
 export default function ChatScreen() {
   const router = useRouter();
   const [appState, setAppState] = useState(EMPTY_STATE);
@@ -600,7 +748,9 @@ export default function ChatScreen() {
                 renderedMessages.map((entry, index) => (
                   <div className={`message-row user-chat-row ${entry.role}`} key={`${entry.timestamp}-${index}`}>
                     <div className="bubble-wrap user-bubble-wrap">
-                      <div className="bubble user-chat-bubble">{entry.text}</div>
+                      <div className="bubble user-chat-bubble">
+                        {renderStructuredMessage(entry.text)}
+                      </div>
                       {entry.role === "bot" && Array.isArray(entry.citations) && entry.citations.length ? (
                         <div className="citations user-chat-citations">
                           {entry.citations.map((citation, citationIndex) => (

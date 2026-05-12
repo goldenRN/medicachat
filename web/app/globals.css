@@ -1478,6 +1478,45 @@ h1 {
   white-space: pre-wrap;
 }
 
+.user-chat-bubble a {
+  color: var(--primary-deep);
+  text-decoration: none;
+}
+
+.user-chat-bubble a:hover {
+  text-decoration: underline;
+}
+
+.rich-text-paragraph,
+.rich-text-heading {
+  margin: 0;
+  line-height: 1.68;
+}
+
+.rich-text-paragraph + .rich-text-paragraph,
+.rich-text-paragraph + .rich-text-list,
+.rich-text-list + .rich-text-paragraph,
+.rich-text-heading + .rich-text-list,
+.rich-text-heading + .rich-text-paragraph,
+.rich-text-list + .rich-text-list,
+.rich-text-paragraph + .rich-text-heading {
+  margin-top: 0.85rem;
+}
+
+.rich-text-heading {
+  font-weight: 600;
+}
+
+.rich-text-list {
+  margin: 0;
+  padding-left: 1.3rem;
+  line-height: 1.7;
+}
+
+.rich-text-list li + li {
+  margin-top: 0.45rem;
+}
+
 .message-row.bot .user-chat-bubble {
   width: 100%;
   background: transparent;

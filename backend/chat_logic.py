@@ -140,6 +140,34 @@ NON_PERSON_QUERY_PHRASES = {
     "хүн ам",
 }
 
+SITE_BRAND_HINTS = (
+    "сос медика",
+    "sos medica",
+    "sosmedica",
+    "coc medika",
+    "coc medica",
+    "сос медика эмнэлэг",
+)
+
+SITE_INFO_KEYWORDS = (
+    "хаана",
+    "хаяг",
+    "утас",
+    "байрш",
+    "салбар",
+    "холбоо",
+    "website",
+    "веб",
+    "site",
+    "address",
+    "phone",
+    "contact",
+    "location",
+    "gazar",
+    "bairsh",
+    "gazar zui",
+)
+
 PERSON_BOUNDARY_KEYWORDS = {
     "heden",
     "kheden",
@@ -278,6 +306,29 @@ def build_token_variants(tokens: list[str]) -> set[str]:
     if len(tokens) >= 3:
         variants.add("".join(tokens))
     return variants
+
+
+def is_site_information_question(
+    question: str,
+    history_messages: list[dict[str, Any]] | None = None,
+) -> bool:
+    normalized = normalize_question_for_intent(question)
+    history_messages = history_messages or []
+
+    has_site_keyword = any(keyword in normalized for keyword in SITE_INFO_KEYWORDS)
+    has_brand_hint = any(hint in normalized for hint in SITE_BRAND_HINTS)
+    if has_site_keyword and has_brand_hint:
+        return True
+
+    if not has_site_keyword:
+        return False
+
+    recent_user_messages = [
+        normalize_question_for_intent(message.get("text", ""))
+        for message in history_messages
+        if message.get("role") == "user"
+    ][-4:]
+    return any(any(hint in text for hint in SITE_BRAND_HINTS) for text in recent_user_messages)
 
 
 def normalize_person_phrase(text: str) -> dict[str, Any]:
@@ -652,6 +703,8 @@ def select_reply_documents(
     all_documents: list[dict[str, Any]],
     history_messages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    if is_site_information_question(question, history_messages):
+        return []
     followup_context = resolve_followup_context(question, all_documents, history_messages)
     if followup_context:
         return followup_context["documents"][:3]

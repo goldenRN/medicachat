@@ -404,7 +404,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 documents,
                 refreshed_before_reply["messages"],
             )
-            reply_text = self.generate_reply_text(
+            reply_text, citation_documents = self.generate_reply_payload(
                 message_text,
                 ranked_docs,
                 reply_documents,
@@ -415,7 +415,7 @@ class AppHandler(BaseHTTPRequestHandler):
             assistant = create_message(
                 "bot",
                 reply_text,
-                [sanitize_document(doc) for doc in reply_documents],
+                [sanitize_document(doc) for doc in citation_documents],
             )
             append_message(history["id"], assistant, len(refreshed_before_reply["messages"]))
             touch_history(history["id"])
@@ -488,7 +488,7 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def generate_reply_text(
+    def generate_reply_payload(
         self,
         message_text: str,
         ranked_docs: list[dict[str, Any]],
@@ -496,26 +496,27 @@ class AppHandler(BaseHTTPRequestHandler):
         all_documents: list[dict[str, Any]],
         history_messages: list[dict[str, Any]],
         fallback_reply: str,
-    ) -> str:
+    ) -> tuple[str, list[dict[str, Any]]]:
         if not is_ai_configured():
-            return fallback_reply
+            return fallback_reply, reply_documents[:3] if reply_documents else []
 
         if should_force_local_answer(message_text, ranked_docs, all_documents, history_messages):
-            return fallback_reply
+            return fallback_reply, reply_documents[:3] if reply_documents else []
 
         context_documents = reply_documents[:3]
         if not context_documents and has_confident_match(message_text, ranked_docs):
             context_documents = ranked_docs[:3]
 
         try:
-            return maybe_generate_ai_answer(
+            reply_text = maybe_generate_ai_answer(
                 message_text,
                 context_documents,
                 history_messages,
             ) or fallback_reply
+            return reply_text, context_documents if context_documents else []
         except RuntimeError as error:
             print(f"[AI fallback] {error}")
-            return fallback_reply
+            return fallback_reply, reply_documents[:3] if reply_documents else []
 
     def send_text(self, status_code: int, text: str) -> None:
         data = text.encode("utf-8")
