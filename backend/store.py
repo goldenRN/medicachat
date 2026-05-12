@@ -4,6 +4,7 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
+from threading import RLock
 from typing import Any
 from uuid import uuid4
 
@@ -18,18 +19,27 @@ from .config import (
     UPLOAD_DIR,
     USERS_PATH,
 )
+from .documents import recover_uploaded_file
 from .text_utils import build_history_title, parse_json, utc_now
+
+
+DB_LOCK = RLock()
 
 
 @contextmanager
 def db_connect():
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    try:
-        yield connection
-        connection.commit()
-    finally:
-        connection.close()
+    with DB_LOCK:
+        connection = sqlite3.connect(DB_PATH, timeout=30)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 30000")
+        connection.execute("PRAGMA synchronous = NORMAL")
+        try:
+            yield connection
+            connection.commit()
+        finally:
+            connection.close()
 
 
 def ensure_bootstrap() -> None:
@@ -38,6 +48,7 @@ def ensure_bootstrap() -> None:
     initialize_database()
     migrate_legacy_json_if_needed()
     seed_defaults_if_needed()
+    sync_orphaned_uploads()
 
 
 def initialize_database() -> None:
@@ -170,6 +181,28 @@ def seed_defaults_if_needed() -> None:
 def ensure_default_folders() -> None:
     with db_connect() as conn:
         ensure_folders_seeded(conn)
+
+
+def sync_orphaned_uploads() -> None:
+    with db_connect() as conn:
+        known_storage_paths = {
+            str(row["storage_path"]).strip()
+            for row in conn.execute("SELECT storage_path FROM documents WHERE storage_path != ''").fetchall()
+        }
+
+    recovered_documents: list[dict[str, Any]] = []
+    for saved_path in sorted(UPLOAD_DIR.rglob("*")):
+        if not saved_path.is_file():
+            continue
+        relative_path = str(saved_path.relative_to(UPLOAD_DIR))
+        if relative_path in known_storage_paths:
+            continue
+        recovered = recover_uploaded_file(saved_path)
+        if recovered:
+            recovered_documents.append(recovered)
+
+    if recovered_documents:
+        insert_documents(recovered_documents)
 
 
 def read_json(path: Path, fallback: Any) -> Any:

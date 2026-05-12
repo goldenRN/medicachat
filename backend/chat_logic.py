@@ -57,6 +57,13 @@ TODAY_TOKENS = {
 }
 
 PERSON_QUERY_STOPWORDS = {
+    "gedeg",
+    "hun",
+    "hunii",
+    "ovchton",
+    "ovchtonii",
+    "uvchtun",
+    "uvchtunii",
     "heden",
     "kheden",
     "hed",
@@ -112,6 +119,22 @@ PERSON_QUERY_STOPWORDS = {
     "товч",
     "гарга",
     "өг",
+}
+
+PERSON_QUERY_HINTS = {
+    "gedeg",
+    "hun",
+    "hunii",
+    "ovchton",
+    "ovchtonii",
+    "uvchtun",
+    "uvchtunii",
+    "patient",
+    "гэдэг",
+    "хүн",
+    "хүний",
+    "өвчтөн",
+    "өвчтөний",
 }
 
 PERSON_BOUNDARY_KEYWORDS = {
@@ -275,6 +298,7 @@ def normalize_person_phrase(text: str) -> dict[str, Any]:
 
 def extract_person_query(question: str) -> dict[str, Any] | None:
     question_text = str(question or "").strip()
+    normalized_question = normalize_question_for_intent(question_text)
     patterns = [
         r"([A-Za-zА-Яа-яӨөҮүЁё0-9\- ]+?)\s+(?:шинжилгээ(?:ний)?|хариу|үр\s*дүн)",
         r"([A-Za-zА-Яа-яӨөҮүЁё0-9\- ]+?)\s+(?:shinjilgee(?:nii|ni)?|hariu|ur\s*dun|result)",
@@ -302,6 +326,11 @@ def extract_person_query(question: str) -> dict[str, Any] | None:
         normalized = normalize_person_phrase(" ".join(collected))
         if len(normalized["tokens"]) >= 2:
             return normalized
+
+    normalized = normalize_person_phrase(question_text)
+    has_person_hint = any(hint in normalized_question for hint in PERSON_QUERY_HINTS)
+    if has_person_hint and len(normalized["tokens"]) == 1 and len(normalized["tokens"][0]) >= 4:
+        return normalized
     return None
 
 
@@ -945,7 +974,7 @@ def score_person_query_match(document: dict[str, Any], person_query: dict[str, A
     ]
 
     required_matches = len(person_query["tokens"])
-    if required_matches < 2:
+    if required_matches < 1:
         return 0
 
     best_score = 0
@@ -962,6 +991,9 @@ def score_person_query_match(document: dict[str, Any], person_query: dict[str, A
             if any(tokens_match(query_token, candidate_token) for candidate_token in candidate["tokens"])
         }
         overlap = len(matched_tokens)
+        if required_matches == 1 and overlap == 1:
+            best_score = max(best_score, 96)
+            continue
         if overlap >= required_matches:
             best_score = max(best_score, 100 + overlap)
 

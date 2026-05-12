@@ -27,6 +27,16 @@ def build_storage_path(folder: str, filename: str) -> str:
     return str(Path(folder_storage_name(folder)) / filename)
 
 
+def infer_folder_from_storage_path(storage_path: Path) -> str:
+    if storage_path.parent == UPLOAD_DIR:
+        return "Ерөнхий"
+    return storage_path.parent.name or "Ерөнхий"
+
+
+def build_storage_reference(storage_path: Path) -> str:
+    return str(storage_path.relative_to(UPLOAD_DIR))
+
+
 def parse_uploaded_file(file_payload: dict[str, str], uploader_email: str) -> dict[str, object] | None:
     safe_name = sanitize_filename(file_payload.get("name", "uploaded.txt"))
     folder_name = sanitize_folder_name(file_payload.get("folder", "Ерөнхий"))
@@ -79,6 +89,44 @@ def parse_uploaded_file(file_payload: dict[str, str], uploader_email: str) -> di
         ),
         "warning": None,
     }
+
+
+def recover_uploaded_file(saved_path: Path) -> dict[str, object] | None:
+    if not saved_path.exists() or not saved_path.is_file():
+        return None
+
+    folder_name = infer_folder_from_storage_path(saved_path)
+    storage_reference = build_storage_reference(saved_path)
+    title = saved_path.name.split("-", 1)[1] if "-" in saved_path.name else saved_path.name
+    uploader_email = "Recovered upload"
+    extension = saved_path.suffix.lower()
+
+    if extension == ".pdf":
+        extracted_text = extract_pdf_text(saved_path).strip()
+        used_ocr = False
+        if not extracted_text:
+            extracted_text = extract_pdf_text_with_ocr(saved_path).strip()
+            used_ocr = bool(extracted_text)
+        if not extracted_text:
+            return build_scan_pdf_record(title, uploader_email, folder_name)
+        document = build_document_record(
+            title,
+            uploader_email,
+            extracted_text,
+            folder_name,
+            storage_reference,
+        )
+        if used_ocr:
+            document["summary"] = summarize_content(extracted_text) or 'Scan PDF байсан тул OCR ашиглан сэргээж индексэллээ.'
+        return document
+
+    try:
+        content = saved_path.read_text(encoding="utf-8").strip()
+    except Exception:
+        return None
+    if not content:
+        return None
+    return build_document_record(title, uploader_email, content, folder_name, storage_reference)
 
 
 def extract_pdf_text(pdf_path: Path) -> str:
