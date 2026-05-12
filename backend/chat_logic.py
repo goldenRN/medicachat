@@ -299,6 +299,7 @@ def normalize_person_phrase(text: str) -> dict[str, Any]:
 def extract_person_query(question: str) -> dict[str, Any] | None:
     question_text = str(question or "").strip()
     normalized_question = normalize_question_for_intent(question_text)
+    has_person_hint = any(hint in normalized_question for hint in PERSON_QUERY_HINTS)
     patterns = [
         r"([A-Za-zА-Яа-яӨөҮүЁё0-9\- ]+?)\s+(?:шинжилгээ(?:ний)?|хариу|үр\s*дүн)",
         r"([A-Za-zА-Яа-яӨөҮүЁё0-9\- ]+?)\s+(?:shinjilgee(?:nii|ni)?|hariu|ur\s*dun|result)",
@@ -328,7 +329,6 @@ def extract_person_query(question: str) -> dict[str, Any] | None:
             return normalized
 
     normalized = normalize_person_phrase(question_text)
-    has_person_hint = any(hint in normalized_question for hint in PERSON_QUERY_HINTS)
     if has_person_hint and len(normalized["tokens"]) == 1 and len(normalized["tokens"][0]) >= 4:
         return normalized
     return None
