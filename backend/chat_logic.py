@@ -123,18 +123,21 @@ PERSON_QUERY_STOPWORDS = {
 
 PERSON_QUERY_HINTS = {
     "gedeg",
-    "hun",
-    "hunii",
     "ovchton",
     "ovchtonii",
     "uvchtun",
     "uvchtunii",
     "patient",
     "гэдэг",
-    "хүн",
-    "хүний",
     "өвчтөн",
     "өвчтөний",
+}
+
+NON_PERSON_QUERY_PHRASES = {
+    "hun am",
+    "hyn am",
+    "population",
+    "хүн ам",
 }
 
 PERSON_BOUNDARY_KEYWORDS = {
@@ -299,6 +302,8 @@ def normalize_person_phrase(text: str) -> dict[str, Any]:
 def extract_person_query(question: str) -> dict[str, Any] | None:
     question_text = str(question or "").strip()
     normalized_question = normalize_question_for_intent(question_text)
+    if any(phrase in normalized_question for phrase in NON_PERSON_QUERY_PHRASES):
+        return None
     has_person_hint = any(hint in normalized_question for hint in PERSON_QUERY_HINTS)
     patterns = [
         r"([A-Za-zА-Яа-яӨөҮүЁё0-9\- ]+?)\s+(?:шинжилгээ(?:ний)?|хариу|үр\s*дүн)",
