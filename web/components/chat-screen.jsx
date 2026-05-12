@@ -287,6 +287,20 @@ export default function ChatScreen() {
       return;
     }
 
+    const previousHistories = appState.histories;
+    const previousActiveHistoryId = appState.activeHistoryId;
+    const previousMessages = appState.messages;
+    const wasActive = previousActiveHistoryId === history.id;
+    const optimisticHistories = previousHistories.filter((entry) => entry.id !== history.id);
+
+    setAppState((current) => ({
+      ...current,
+      histories: current.histories.filter((entry) => entry.id !== history.id),
+      activeHistoryId: current.activeHistoryId === history.id ? null : current.activeHistoryId,
+      messages: current.activeHistoryId === history.id ? [] : current.messages,
+    }));
+    setActiveHistoryMenuId("");
+
     try {
       const response = await fetchJson("/api/history/delete", {
         method: "POST",
@@ -295,27 +309,28 @@ export default function ChatScreen() {
         },
       });
 
-      setAppState((current) => {
-        const deletedActive = current.activeHistoryId === history.id;
-        return {
-          ...current,
-          histories: response.histories || current.histories.filter((entry) => entry.id !== history.id),
-          activeHistoryId: deletedActive ? null : current.activeHistoryId,
-          messages: deletedActive ? [] : current.messages,
-        };
-      });
+      const remainingHistories = response.histories || optimisticHistories;
+      setAppState((current) => ({
+        ...current,
+        histories: remainingHistories,
+        activeHistoryId: wasActive ? null : current.activeHistoryId,
+        messages: wasActive ? [] : current.messages,
+      }));
 
-      const remainingHistories = response.histories || [];
-      if (appState.activeHistoryId === history.id && remainingHistories.length) {
+      if (wasActive && remainingHistories.length) {
         await handleHistorySelect(remainingHistories[0].id);
       }
     } catch (deleteError) {
+      setAppState((current) => ({
+        ...current,
+        histories: previousHistories,
+        activeHistoryId: previousActiveHistoryId,
+        messages: previousMessages,
+      }));
       setNotice({
         text: deleteError.message || "Chat устгах үед алдаа гарлаа.",
         tone: "error",
       });
-    } finally {
-      setActiveHistoryMenuId("");
     }
   }
 
@@ -431,8 +446,8 @@ export default function ChatScreen() {
             <div className="chat-brand-lockup">
               <LogoMark className="mini-badge chat-brand-badge" />
               <div>
-                <p className="chat-brand-overline">SOS MEDICA</p>
-                <h2>Сос Медика Монгол туслах</h2>
+                <p className="chat-brand-overline">Сос Медика Монгол</p>
+                <h2>Ухаалаг туслах</h2>
               </div>
             </div>
 

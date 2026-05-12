@@ -1162,8 +1162,8 @@ h1 {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 1rem;
   padding: 1.15rem 0.95rem 0.85rem;
-  border-top-left-radius: 24px;
-  border-bottom-left-radius: 24px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
   border-right: 1px solid rgba(97, 118, 168, 0.1);
   overflow: hidden;
   transition: opacity 180ms ease, transform 180ms ease, padding 180ms ease;
@@ -1406,8 +1406,8 @@ h1 {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   padding: 0;
   overflow: hidden;
-  border-top-right-radius: 24px;
-  border-bottom-right-radius: 24px;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .user-chat-header {
@@ -1812,9 +1812,9 @@ h1 {
     display: none;
   }
 
-  .user-chat-sidebar,
-  .user-chat-stage {
-    border-radius: 24px;
+.user-chat-sidebar,
+.user-chat-stage {
+    border-radius: 0;
   }
 }
 

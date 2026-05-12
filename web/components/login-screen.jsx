@@ -54,8 +54,8 @@ export default function LoginScreen() {
           <div className="logo-lockup">
             <LogoMark />
             <div>
-              <p className="eyebrow">AI Knowledge Assistant</p>
-              <h2>СОС Медикал Монгол</h2>
+              <p className="eyebrow">Сос Медика Монгол</p>
+              <h2>Ухаалаг туслах</h2>
             </div>
           </div>
         </section>
