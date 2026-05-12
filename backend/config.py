@@ -54,6 +54,7 @@ GEMINI_API_KEY = normalize_api_key(
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 GEMINI_BASE_URL = os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
 GEMINI_TIMEOUT_SECONDS = float(os.environ.get("GEMINI_TIMEOUT_SECONDS", "45") or "45")
+SOSMEDICA_SITE_URL = os.environ.get("SOSMEDICA_SITE_URL", "https://sosmedica.mn").rstrip("/")
 
 DEFAULT_PROMPTS = [
     "Triage-ийн улаан ангилалд ямар тохиолдол багтдаг вэ?",

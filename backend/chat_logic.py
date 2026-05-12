@@ -322,7 +322,7 @@ def extract_person_query(question: str) -> dict[str, Any] | None:
         if len(collected) == 4:
             break
 
-    if len(collected) >= 2:
+    if has_person_hint and len(collected) >= 2:
         normalized = normalize_person_phrase(" ".join(collected))
         if len(normalized["tokens"]) >= 2:
             return normalized
@@ -843,6 +843,28 @@ def build_aggregate_answer(
     if names:
         parts.append(f"Нэрсийн жишээ: {', '.join(names)}")
     return "\n\n".join(parts)
+
+
+def should_force_local_answer(
+    question: str,
+    ranked_docs: list[dict[str, Any]],
+    all_documents: list[dict[str, Any]],
+    history_messages: list[dict[str, Any]],
+) -> bool:
+    normalized = normalize_question_for_intent(question)
+    if resolve_followup_context(question, all_documents, history_messages):
+        return True
+    if build_list_answer(normalized, ranked_docs, all_documents, history_messages):
+        return True
+    if build_aggregate_answer(normalized, all_documents, history_messages):
+        return True
+    if is_today_question(question, normalized) or is_greeting_question(question, normalized):
+        return True
+
+    person_query = extract_person_query(question)
+    if person_query and not has_confident_match(question, ranked_docs):
+        return True
+    return False
 
 
 def is_count_question(normalized: str) -> bool:

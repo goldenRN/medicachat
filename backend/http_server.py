@@ -11,11 +11,10 @@ from urllib.parse import parse_qs, urlparse
 from .chat_logic import (
     build_answer,
     has_confident_match,
-    is_count_question,
-    is_list_question,
     normalize_question_for_intent,
     rank_documents,
     select_reply_documents,
+    should_force_local_answer,
 )
 from .ai_service import get_active_ai_model, get_active_ai_provider, is_ai_configured, maybe_generate_ai_answer
 from .config import DB_PATH, DEFAULT_PROMPTS, HOST, PORT, ROOT_DIR
@@ -498,11 +497,10 @@ class AppHandler(BaseHTTPRequestHandler):
         history_messages: list[dict[str, Any]],
         fallback_reply: str,
     ) -> str:
-        normalized = normalize_question_for_intent(message_text)
         if not is_ai_configured():
             return fallback_reply
 
-        if is_count_question(normalized) or is_list_question(normalized):
+        if should_force_local_answer(message_text, ranked_docs, all_documents, history_messages):
             return fallback_reply
 
         context_documents = reply_documents[:3]

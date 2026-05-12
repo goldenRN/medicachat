@@ -4,6 +4,7 @@ import json
 from urllib import error, request
 
 from .config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, OPENAI_TIMEOUT_SECONDS
+from .site_context import maybe_fetch_site_context
 from .text_utils import normalize_whitespace
 
 
@@ -54,14 +55,16 @@ def build_openai_input(
     context_documents: list[dict],
     history_messages: list[dict],
 ) -> list[dict]:
+    site_context = maybe_fetch_site_context(question)
     developer_message = {
         "role": "developer",
         "content": (
             "You are SOS Medica's assistant. "
             "Answer in Mongolian unless the user clearly asks in another language. "
-            "Keep answers concise and practical. "
+            "Be practical, complete, and direct instead of overly short. "
             "If document context is provided, use it faithfully and do not dump raw PDF text; summarize the relevant facts cleanly. "
             "If document context is empty, you may answer general questions normally. "
+            "If website context is provided, prefer it for address, location, phone, or hospital information questions and include the source URL when helpful. "
             "But if the user is asking about a specific patient, file, or document fact that is not supported by context, clearly say it was not found and do not invent facts."
         ),
     }
@@ -71,6 +74,13 @@ def build_openai_input(
             {
                 "role": "developer",
                 "content": build_document_context(context_documents),
+            }
+        )
+    if site_context:
+        messages.append(
+            {
+                "role": "developer",
+                "content": f"SITE_CONTEXT\n\n{site_context}",
             }
         )
     for message in history_messages[-8:]:
