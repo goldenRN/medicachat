@@ -5,7 +5,7 @@ from urllib import error, request
 
 from .config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, OPENAI_TIMEOUT_SECONDS
 from .site_context import maybe_fetch_site_context
-from .text_utils import normalize_whitespace
+from .text_utils import normalize_multiline_text, normalize_whitespace
 
 
 def is_openai_configured() -> bool:
@@ -62,6 +62,7 @@ def build_openai_input(
             "You are SOS Medica's assistant. "
             "Answer in Mongolian unless the user clearly asks in another language. "
             "Be practical, complete, and direct instead of overly short. "
+            "When the answer contains multiple points, format them with line breaks or numbered bullets so it is easy to read. "
             "If document context is provided, use it faithfully and do not dump raw PDF text; summarize the relevant facts cleanly. "
             "If document context is empty, you may answer general questions normally. "
             "If website context is provided, prefer it for address, location, phone, or hospital information questions and include the source URL when helpful. "
@@ -112,7 +113,7 @@ def build_document_context(documents: list[dict]) -> str:
 
 
 def extract_response_text(payload: dict) -> str:
-    output_text = normalize_whitespace(payload.get("output_text", ""))
+    output_text = normalize_multiline_text(payload.get("output_text", ""))
     if output_text:
         return output_text
 
@@ -120,7 +121,7 @@ def extract_response_text(payload: dict) -> str:
     for item in payload.get("output", []):
         for content in item.get("content", []):
             if content.get("type") in {"output_text", "text"}:
-                text_value = normalize_whitespace(content.get("text", ""))
+                text_value = normalize_multiline_text(content.get("text", ""))
                 if text_value:
                     parts.append(text_value)
     return "\n\n".join(parts)

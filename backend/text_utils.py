@@ -60,3 +60,19 @@ def extract_name_from_title(title: str) -> str:
 
 def normalize_whitespace(value: str) -> str:
     return re.sub(r"\s+", " ", str(value)).strip()
+
+
+def normalize_multiline_text(value: str) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+    compact_lines: list[str] = []
+    previous_blank = False
+    for line in lines:
+        if not line:
+            if not previous_blank:
+                compact_lines.append("")
+            previous_blank = True
+            continue
+        compact_lines.append(line)
+        previous_blank = False
+    return "\n".join(compact_lines).strip()
