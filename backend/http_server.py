@@ -5,45 +5,57 @@ import mimetypes
 import secrets
 from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .chat_logic import (
     build_answer,
+    collect_search_terms,
     has_confident_match,
+    needs_full_document_scan,
     normalize_question_for_intent,
     rank_documents,
     select_reply_documents,
+    should_skip_document_search,
     should_force_local_answer,
 )
 from .ai_service import get_active_ai_model, get_active_ai_provider, is_ai_configured, maybe_generate_ai_answer
 from .config import DB_PATH, DEFAULT_PROMPTS, HOST, PORT, ROOT_DIR
 from .documents import (
+    UPLOAD_DIR,
     copy_document_storage,
     delete_folder_storage,
     delete_document_storage,
     move_folder_storage,
     parse_uploaded_file,
+    prepare_image_for_browser,
 )
 from .store import (
     append_message,
+    create_document_submission,
     create_folder,
     create_history_record,
     create_message,
+    delete_document_submission_record,
     delete_history,
     delete_document_record,
     delete_folder,
     ensure_bootstrap,
     find_user_by_credentials,
     get_document_by_id,
+    get_document_submission_by_id,
     get_history_by_id,
     insert_documents,
     list_document_folders,
     list_documents,
+    list_document_submissions,
     list_history_summaries_by_user,
     rename_folder,
     rename_history,
     sanitize_document,
+    sanitize_submission,
+    search_documents,
     sanitize_user,
     save_copied_document,
     summarize_history,
@@ -56,6 +68,20 @@ from .text_utils import build_history_title, sanitize_folder_name, summarize_con
 
 SESSIONS: dict[str, dict[str, str]] = {}
 CHAT_UPLOADS: dict[str, list[dict[str, Any]]] = {}
+
+
+def merge_documents(*document_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for group in document_groups:
+        for document in group:
+            document_id = str(document.get("id", "")).strip()
+            dedupe_key = document_id or f"title:{document.get('title', '')}"
+            if dedupe_key in seen_ids:
+                continue
+            seen_ids.add(dedupe_key)
+            merged.append(document)
+    return merged
 
 
 def get_chat_uploads(user_id: str) -> list[dict[str, Any]]:
@@ -88,6 +114,30 @@ def get_session(handler: BaseHTTPRequestHandler) -> dict[str, str] | None:
     return {"token": token, **SESSIONS[token]} if token and token in SESSIONS else None
 
 
+def serve_storage_file(handler: BaseHTTPRequestHandler, safe_path: Path, download_name: str) -> None:
+    prepared_path = safe_path
+    content_type = mimetypes.guess_type(safe_path.name)[0] or "application/octet-stream"
+    should_cleanup = False
+
+    if content_type.startswith("image/") or safe_path.suffix.lower() in {".heic", ".heif"}:
+        prepared_path, content_type, should_cleanup = prepare_image_for_browser(safe_path)
+
+    try:
+        handler.send_response(200)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(prepared_path.stat().st_size))
+        handler.send_header("Content-Disposition", f'inline; filename="{Path(download_name).name}"')
+        handler.send_header("Last-Modified", formatdate(prepared_path.stat().st_mtime, usegmt=True))
+        handler.end_headers()
+        handler.wfile.write(prepared_path.read_bytes())
+    finally:
+        if should_cleanup and prepared_path != safe_path and prepared_path.exists():
+            try:
+                prepared_path.unlink()
+            except OSError:
+                pass
+
+
 class AppHandler(BaseHTTPRequestHandler):
     server_version = "SOSMedicaPython/1.0"
 
@@ -116,7 +166,10 @@ class AppHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/bootstrap":
             if not session:
                 return
-            visible_documents = [*get_chat_uploads(session["userId"]), *list_documents()]
+            query = parse_qs(parsed.query)
+            scope = (query.get("scope", ["chat"])[0] or "chat").strip().lower()
+            include_admin_payload = scope == "admin" and session["role"] == "admin"
+            chat_documents = [sanitize_document(document) for document in get_chat_uploads(session["userId"])]
             payload = {
                 "user": {
                     "email": session["email"],
@@ -128,9 +181,10 @@ class AppHandler(BaseHTTPRequestHandler):
                     "model": get_active_ai_model(),
                 },
                 "prompts": DEFAULT_PROMPTS,
-                "folders": list_document_folders(),
-                "chatDocuments": [sanitize_document(document) for document in get_chat_uploads(session["userId"])],
-                "documents": [sanitize_document(document) for document in visible_documents],
+                "folders": list_document_folders() if include_admin_payload else [],
+                "chatDocuments": chat_documents,
+                "documents": [sanitize_document(document) for document in list_documents()] if include_admin_payload else [],
+                "submissions": [sanitize_submission(item) for item in list_document_submissions()] if include_admin_payload else [],
                 "histories": list_history_summaries_by_user(session["userId"]),
             }
             self.send_json(200, payload)
@@ -145,6 +199,62 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.send_json(404, {"error": "Chat history олдсонгүй."})
                 return
             self.send_json(200, {"history": history})
+            return
+
+        if parsed.path == "/api/admin/document/file":
+            if not session:
+                return
+            if session["role"] != "admin":
+                self.send_json(403, {"error": "Admin эрх шаардлагатай."})
+                return
+            document_id = (parse_qs(parsed.query).get("id", [""])[0] or "").strip()
+            if not document_id:
+                self.send_json(400, {"error": "Файл ID дутуу байна."})
+                return
+            document = get_document_by_id(document_id)
+            if not document:
+                self.send_json(404, {"error": "Файл олдсонгүй."})
+                return
+            storage_path = str(document.get("storagePath", "") or "").strip()
+            if not storage_path:
+                self.send_json(404, {"error": "Энэ файлд preview байхгүй байна."})
+                return
+
+            safe_path = (UPLOAD_DIR / storage_path).resolve()
+            upload_root = UPLOAD_DIR.resolve()
+            if not str(safe_path).startswith(str(upload_root)) or not safe_path.exists() or safe_path.is_dir():
+                self.send_json(404, {"error": "Файл олдсонгүй."})
+                return
+
+            serve_storage_file(self, safe_path, str(document.get("title", safe_path.name)))
+            return
+
+        if parsed.path == "/api/admin/submission/file":
+            if not session:
+                return
+            if session["role"] != "admin":
+                self.send_json(403, {"error": "Admin эрх шаардлагатай."})
+                return
+            submission_id = (parse_qs(parsed.query).get("id", [""])[0] or "").strip()
+            if not submission_id:
+                self.send_json(400, {"error": "Баримтын ID дутуу байна."})
+                return
+            submission = get_document_submission_by_id(submission_id)
+            if not submission:
+                self.send_json(404, {"error": "Баримт олдсонгүй."})
+                return
+            storage_path = str(submission.get("storagePath", "") or "").strip()
+            if not storage_path:
+                self.send_json(404, {"error": "Энэ баримтад preview байхгүй байна."})
+                return
+
+            safe_path = (UPLOAD_DIR / storage_path).resolve()
+            upload_root = UPLOAD_DIR.resolve()
+            if not str(safe_path).startswith(str(upload_root)) or not safe_path.exists() or safe_path.is_dir():
+                self.send_json(404, {"error": "Файл олдсонгүй."})
+                return
+
+            serve_storage_file(self, safe_path, str(submission.get("title", safe_path.name)))
             return
 
         self.send_json(404, {"error": "Not found"})
@@ -260,6 +370,63 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/submission/upload":
+            files = body.get("files", [])
+            if not isinstance(files, list) or not files:
+                self.send_json(400, {"error": "Илгээх баримт алга."})
+                return
+
+            created_submissions = []
+            needs_resubmit = False
+            for file_payload in files:
+                submission_payload = {**file_payload, "folder": "Илгээсэн баримт"}
+                parsed_file = parse_uploaded_file(submission_payload, session["email"])
+                if not parsed_file or not parsed_file.get("document"):
+                    needs_resubmit = True
+                    continue
+
+                document = parsed_file["document"]
+                warning_text = str(parsed_file.get("warning") or "").lower()
+                summary_text = str(document.get("summary") or "").lower()
+                status = (
+                    "needs_resubmit"
+                    if "уншиж чадсангүй" in warning_text
+                    or "embedded text олдсонгүй" in summary_text
+                    or "ocr шаардлагатай" in summary_text
+                    else "processed"
+                )
+                if status != "processed":
+                    needs_resubmit = True
+
+                submission = create_document_submission(
+                    session["userId"],
+                    session["email"],
+                    document,
+                    status,
+                )
+                created_submissions.append(sanitize_submission(submission))
+
+            if not created_submissions:
+                self.send_json(
+                    201,
+                    {
+                        "submissions": [],
+                        "message": "Баримтын зургийг дахин явуулна уу.",
+                        "tone": "warning",
+                    },
+                )
+                return
+
+            self.send_json(
+                201,
+                {
+                    "submissions": created_submissions,
+                    "message": "Баримтыг илгээлээ." if not needs_resubmit else "Баримтыг хүлээн авлаа. Хэрэв текст тодорхой биш бол баримтын зургийг дахин явуулна уу.",
+                    "tone": "success" if not needs_resubmit else "warning",
+                },
+            )
+            return
+
         if parsed.path == "/api/chat/upload/delete":
             document_id = str(body.get("documentId", "")).strip()
             if not document_id:
@@ -341,6 +508,24 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/admin/submission/delete":
+            if session["role"] != "admin":
+                self.send_json(403, {"error": "Admin эрх шаардлагатай."})
+                return
+            submission_id = str(body.get("submissionId", "")).strip()
+            submission = delete_document_submission_record(submission_id)
+            if not submission:
+                self.send_json(404, {"error": "Баримт олдсонгүй."})
+                return
+            delete_document_storage(submission)
+            self.send_json(
+                200,
+                {
+                    "submissions": [sanitize_submission(item) for item in list_document_submissions()],
+                },
+            )
+            return
+
         if parsed.path == "/api/admin/document/copy":
             if session["role"] != "admin":
                 self.send_json(403, {"error": "Admin эрх шаардлагатай."})
@@ -382,7 +567,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.send_json(400, {"error": "Асуулт хоосон байна."})
                 return
 
-            documents = [*get_chat_uploads(session["userId"]), *list_documents()]
+            chat_documents = get_chat_uploads(session["userId"])
             history = get_history_by_id(preferred_history_id, session["userId"]) if preferred_history_id else None
             if not history:
                 history = create_history_record(session["userId"], build_history_title(message_text))
@@ -391,24 +576,32 @@ class AppHandler(BaseHTTPRequestHandler):
 
             append_message(history["id"], create_message("user", message_text), len(history["messages"]))
             refreshed_before_reply = get_history_by_id(history["id"], session["userId"]) or history
+            if should_skip_document_search(message_text, refreshed_before_reply["messages"]):
+                db_search_results = []
+            else:
+                db_search_results = search_documents(collect_search_terms(message_text))
+            documents = merge_documents(chat_documents, db_search_results)
+            all_documents = documents
+            if needs_full_document_scan(message_text, refreshed_before_reply["messages"]):
+                all_documents = merge_documents(chat_documents, list_documents())
             ranked_docs = rank_documents(message_text, documents)
             reply_documents = select_reply_documents(
                 message_text,
                 ranked_docs,
-                documents,
+                all_documents,
                 refreshed_before_reply["messages"],
             )
             fallback_reply = build_answer(
                 message_text,
                 ranked_docs,
-                documents,
+                all_documents,
                 refreshed_before_reply["messages"],
             )
             reply_text, citation_documents = self.generate_reply_payload(
                 message_text,
                 ranked_docs,
                 reply_documents,
-                documents,
+                all_documents,
                 refreshed_before_reply["messages"],
                 fallback_reply,
             )
@@ -425,7 +618,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 {
                     "history": refreshed,
                     "reply": assistant,
-                    "documents": [sanitize_document(document) for document in documents],
+                    "documents": [sanitize_document(document) for document in all_documents],
                 },
             )
             return

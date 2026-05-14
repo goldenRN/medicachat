@@ -315,12 +315,12 @@ h1 {
 }
 
 .panel {
-  display: grid;
+  /* display: grid; */
   gap: 0.9rem;
   padding: 1rem;
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(97, 118, 168, 0.12);
+  /* border: 1px solid rgba(97, 118, 168, 0.12); */
 }
 
 .compact {
@@ -513,8 +513,8 @@ h1 {
 }
 
 .icon-button {
-  width: 3.4rem;
-  height: 3.4rem;
+  width: 2.4rem;
+  height: 2.4rem;
   border-radius: 18px;
   display: inline-grid;
   place-items: center;
@@ -538,9 +538,9 @@ h1 {
 .icon-button-soft,
 .icon-button-quiet,
 .icon-button-danger {
-  width: 2.7rem;
-  height: 2.7rem;
-  border-radius: 14px;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 12px;
   box-shadow: none;
 }
 
@@ -587,8 +587,26 @@ h1 {
   padding: 0.95rem;
 }
 
+.admin-app-shell.sidebar-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.admin-app-shell.sidebar-collapsed .admin-sidebar-clean {
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+  padding: 0;
+  border-width: 0;
+}
+
+.admin-sidebar-clean {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 0.35rem;
+  padding: 0.7rem;
+}
+
 .admin-brand {
-  padding-bottom: 0.2rem;
+  padding-bottom: 0.05rem;
 }
 
 .admin-identity-panel {
@@ -613,10 +631,14 @@ h1 {
   flex-wrap: wrap;
 }
 
-.admin-upload-panel,
 .admin-folders-panel {
-  gap: 0.8rem;
-  padding: 0.95rem;
+  gap: 0.32rem;
+  padding: 0.45rem 0.55rem 0.55rem;
+}
+
+.admin-clean-panel {
+  padding: 0.65rem;
+  border-radius: 22px;
 }
 
 .chat-history-panel,
@@ -627,17 +649,30 @@ h1 {
 
 .admin-folders-panel {
   min-height: 0;
+  overflow: hidden;
 }
 
 .admin-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.8rem;
+  gap: 0.65rem;
+  margin-bottom: 0.1rem;
+}
+
+.admin-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .admin-section-head h3 {
   font-size: 1rem;
+}
+
+.admin-section-label {
+  padding: 0;
+  margin-bottom: 0.05rem;
 }
 
 .admin-create-row {
@@ -693,17 +728,18 @@ h1 {
   min-height: 0;
   overflow-y: auto;
   display: grid;
-  gap: 0.45rem;
+  gap: 0.12rem;
   padding-right: 0.1rem;
+  padding-top: 0.18rem;
 }
 
 .folder-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem;
-  border-radius: 18px;
+  gap: 0.25rem;
+  padding: 0.06rem;
+  border-radius: 14px;
   border: 1px solid transparent;
   transition: border-color 160ms ease, background 160ms ease;
 }
@@ -716,9 +752,9 @@ h1 {
 .folder-row-main {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.55rem;
   min-width: 0;
-  padding: 0.45rem 0.55rem;
+  padding: 0.18rem 0.34rem;
   border: 0;
   background: transparent;
   color: inherit;
@@ -727,9 +763,9 @@ h1 {
 }
 
 .folder-row-icon {
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 12px;
+  width: 1.56rem;
+  height: 1.56rem;
+  border-radius: 9px;
   color: var(--primary);
   background: rgba(61, 99, 221, 0.08);
 }
@@ -737,17 +773,18 @@ h1 {
 .folder-row-text {
   min-width: 0;
   display: grid;
-  gap: 0.05rem;
+  gap: 0;
 }
 
 .folder-row-text strong,
 .document-title-stack strong {
-  font-size: 0.95rem;
+  font-size: 0.87rem;
+  font-weight: 300;
 }
 
 .folder-row-text span {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.73rem;
 }
 
 .menu-anchor {
@@ -801,6 +838,52 @@ h1 {
 
 .chat-stage-minimal {
   padding: 1rem 1.05rem;
+}
+
+.admin-stage-clean {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: 0;
+  overflow: hidden;
+}
+
+.admin-stage-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.35rem 1.15rem;
+  background: white;
+}
+
+.admin-header-title {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.admin-header-title h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 300;
+  line-height: 1.35;
+}
+
+.admin-header-upload {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.admin-stage-overview {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.2rem 0.2rem 0.8rem;
+}
+
+.admin-stage-overview h2 {
+  font-size: 1.18rem;
+  line-height: 1.3;
+  font-weight: 400;
 }
 
 .admin-stage-header {
@@ -862,9 +945,14 @@ h1 {
 .document-table-head,
 .document-row {
   display: grid;
-  grid-template-columns: minmax(15rem, 1.2fr) minmax(16rem, 1.8fr) minmax(10rem, 0.9fr) minmax(11rem, 0.95fr) auto;
+  grid-template-columns: minmax(15rem, 1.25fr) minmax(17rem, 1.95fr) minmax(10rem, 0.9fr) auto;
   gap: 0.85rem;
   align-items: center;
+}
+
+.document-table-head-submissions,
+.submission-row {
+  grid-template-columns: minmax(14rem, 1.1fr) minmax(16rem, 1.4fr) minmax(9rem, 0.75fr) minmax(10rem, 0.8fr) auto;
 }
 
 .document-table-head {
@@ -906,6 +994,7 @@ h1 {
   font-size: 0.95rem;
   line-height: 1.35;
   word-break: break-word;
+  font-weight: 300;
 }
 
 .document-row-summary {
@@ -941,35 +1030,225 @@ h1 {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+  justify-content: flex-end;
+  position: relative;
+}
+
+.document-row-status {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.submission-amount {
+  font-size: 0.92rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.submission-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.78rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 400;
+  border: 1px solid rgba(97, 118, 168, 0.14);
+  background: rgba(61, 99, 221, 0.08);
+  color: var(--primary);
+}
+
+.submission-status-badge.processed {
+  background: rgba(39, 178, 116, 0.12);
+  border-color: rgba(39, 178, 116, 0.18);
+  color: #0f8b56;
+}
+
+.submission-status-badge.needs_resubmit {
+  background: rgba(255, 208, 86, 0.18);
+  border-color: rgba(255, 208, 86, 0.25);
+  color: #8a6400;
+}
+
+.copy-popup-menu {
+  right: 0;
+  min-width: 15rem;
+}
+
+.copy-popup-body {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.copy-popup-field {
+  gap: 0.25rem;
+}
+
+.copy-popup-submit {
+  width: 100%;
+  justify-content: center;
+  padding: 0.62rem 0.85rem;
+  font-size: 0.9rem;
+  border-radius: 14px;
+}
+
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  padding: 0.85rem 0.2rem 0;
+}
+
+.admin-pagination-label {
+  min-width: 3.25rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.preview-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(20, 28, 49, 0.48);
+  backdrop-filter: blur(6px);
+}
+
+.preview-modal {
+  width: min(100%, 70rem);
+  height: min(100%, 88vh);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(97, 118, 168, 0.16);
+  box-shadow: 0 28px 60px rgba(20, 28, 49, 0.22);
+  overflow: hidden;
+}
+
+.preview-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid rgba(97, 118, 168, 0.12);
+}
+
+.preview-modal-title {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.preview-modal-title h3 {
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.preview-modal-title p {
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.preview-modal-body {
+  min-height: 0;
+  background: #f8fbff;
+}
+
+.preview-frame,
+.preview-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+}
+
+.preview-image {
+  object-fit: contain;
+  background: #f8fbff;
 }
 
 .admin-table-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(10rem, 0.75fr) minmax(10rem, 0.75fr);
-  gap: 0.8rem;
+  grid-template-columns: minmax(0, 1.45fr) minmax(10rem, 0.72fr) minmax(10rem, 0.72fr);
+  gap: 0.65rem;
   align-items: end;
-  padding: 0.1rem 0.2rem 0.8rem;
+  padding: 0.05rem 0.2rem 0.7rem;
+}
+
+.admin-upload-trigger {
+  min-width: 10.4rem;
+  justify-content: center;
+  padding: 0.62rem 0.9rem;
+  font-size: 0.9rem;
+  border-radius: 14px;
+}
+
+.admin-upload-trigger .new-chat-rail-icon {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.admin-upload-trigger .new-chat-rail-icon svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.admin-table-toolbar .field {
+  gap: 0.3rem;
+}
+
+.admin-table-toolbar .field span {
+  font-size: 0.8rem;
+  color: #8c97ae;
+}
+
+.admin-table-toolbar .field input,
+.admin-table-toolbar .field-select {
+  min-height: 2.85rem;
+  padding-top: 0.72rem;
+  padding-bottom: 0.72rem;
+  border-radius: 16px;
+  font-size: 0.94rem;
 }
 
 .admin-search-field input {
-  padding-top: 0.82rem;
-  padding-bottom: 0.82rem;
+  padding-top: 0.72rem;
+  padding-bottom: 0.72rem;
 }
 
 @media (max-width: 1280px) {
   .admin-table-toolbar {
-    grid-template-columns: minmax(0, 1.4fr) minmax(9rem, 0.8fr) minmax(9rem, 0.8fr);
+    grid-template-columns: minmax(0, 1.2fr) minmax(9rem, 0.8fr) minmax(9rem, 0.8fr);
   }
 
   .document-table-head,
   .document-row {
-    grid-template-columns: minmax(13rem, 1.1fr) minmax(13rem, 1.45fr) minmax(9rem, 0.8fr) minmax(10rem, 0.9fr) auto;
+    grid-template-columns: minmax(13rem, 1.1fr) minmax(13rem, 1.55fr) minmax(9rem, 0.85fr) auto;
   }
 }
 
 @media (max-width: 960px) {
   .admin-table-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .admin-header-upload {
+    display: none;
+  }
+
+  .admin-upload-trigger {
+    min-width: 0;
+    width: 100%;
   }
 
   .document-table-head {
@@ -1201,7 +1480,7 @@ h1 {
 .chat-brand-lockup h2 {
   font-size: 1.08rem;
   line-height: 1.35;
-  font-weight: 400;
+  font-weight: 300;
 }
 
 .new-chat-rail-button {
@@ -1209,18 +1488,24 @@ h1 {
   align-items: center;
   gap: 0.7rem;
   width: 100%;
-  padding: 0.82rem 0.9rem;
+  padding: 0.9rem 0.9rem;
   border: 1px solid rgba(61, 99, 221, 0.16);
   border-radius: 16px;
   background: rgba(76, 112, 232, 0.08);
   color: var(--primary);
   font-size: 0.98rem;
-  font-weight: 400;
+  font-weight: 300;
   cursor: pointer;
 }
 
 .new-chat-rail-button:hover {
   background: rgba(76, 112, 232, 0.12);
+}
+
+.chat-sidebar-actions {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.7rem;
 }
 
 .new-chat-rail-icon,
@@ -1254,14 +1539,19 @@ h1 {
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 0.8rem;
+  gap: 0.55rem;
+  margin-top: 0.25rem;
+  padding-top: 0.1rem;
 }
 
 .chat-history-label {
   padding: 0 0.3rem;
+  margin: 0;
+  display: block;
   font-size: 0.88rem;
   color: #97a1b7;
   font-weight: 400;
+  line-height: 1.25;
 }
 
 .chat-history-scroll {
@@ -1390,7 +1680,7 @@ h1 {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.98rem;
-  font-weight: 400;
+  font-weight: 300;
 }
 
 .chat-user-menu {

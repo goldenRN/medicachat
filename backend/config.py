@@ -46,6 +46,7 @@ OPENAI_API_KEY = normalize_api_key(
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5").strip() or "gpt-5"
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
 OPENAI_TIMEOUT_SECONDS = float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "45") or "45")
+SITE_FETCH_TIMEOUT_SECONDS = float(os.environ.get("SITE_FETCH_TIMEOUT_SECONDS", "2.5") or "2.5")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "auto").strip().lower() or "auto"
 GEMINI_API_KEY = normalize_api_key(
     os.environ.get("GOOGLE_API_KEY", "") or os.environ.get("GEMINI_API_KEY", ""),

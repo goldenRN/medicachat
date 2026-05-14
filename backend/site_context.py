@@ -5,7 +5,7 @@ from functools import lru_cache
 from html import unescape
 from urllib import error, request
 
-from .config import SOSMEDICA_SITE_URL
+from .config import SITE_FETCH_TIMEOUT_SECONDS, SOSMEDICA_SITE_URL
 from .text_utils import normalize_whitespace
 
 
@@ -31,7 +31,7 @@ SITE_INFO_HINTS = (
     "location",
 )
 
-SITE_PATHS = ("", "/contact", "/contacts", "/about", "/locations")
+SITE_PATHS = ("/contact", "", "/about")
 
 
 def maybe_fetch_site_context(question: str) -> str:
@@ -47,7 +47,7 @@ def maybe_fetch_site_context(question: str) -> str:
         snippet = fetch_site_snippet(url)
         if snippet:
             sections.append(f"Source URL: {url}\nContent: {snippet}")
-        if len(sections) == 2:
+        if len(sections) == 1:
             break
     return "\n\n".join(sections)
 
@@ -62,7 +62,7 @@ def fetch_site_snippet(url: str) -> str:
             },
             method="GET",
         )
-        with request.urlopen(req, timeout=8) as response:
+        with request.urlopen(req, timeout=SITE_FETCH_TIMEOUT_SECONDS) as response:
             content_type = response.headers.get("Content-Type", "")
             if "text/html" not in content_type and "text/plain" not in content_type:
                 return ""

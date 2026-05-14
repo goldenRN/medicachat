@@ -14,11 +14,14 @@ import {
   initialsFromEmail,
 } from "@/lib/session";
 
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".heic", ".heif"];
+
 const EMPTY_STATE = {
   user: null,
   prompts: [],
   documents: [],
   chatDocuments: [],
+  submissions: [],
   histories: [],
   activeHistoryId: null,
   messages: [],
@@ -185,9 +188,11 @@ export default function ChatScreen() {
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [isSubmittingDocument, setIsSubmittingDocument] = useState(false);
   const textareaRef = useRef(null);
   const chatLogRef = useRef(null);
   const fileInputRef = useRef(null);
+  const submissionInputRef = useRef(null);
 
   useEffect(() => {
     if (!getStoredToken()) {
@@ -246,13 +251,14 @@ export default function ChatScreen() {
 
   async function loadBootstrapData() {
     try {
-      const response = await fetchJson("/api/bootstrap");
+      const response = await fetchJson("/api/bootstrap?scope=chat");
       setAppState((current) => ({
         ...current,
         user: response.user,
         prompts: response.prompts,
-        documents: response.documents,
+        documents: response.documents || [],
         chatDocuments: response.chatDocuments || [],
+        submissions: response.submissions || [],
         histories: response.histories,
       }));
 
@@ -262,7 +268,7 @@ export default function ChatScreen() {
         );
         applyHistoryResponse(
           historyResponse.history,
-          response.documents,
+          response.documents || [],
           response.prompts,
           response.user,
         );
@@ -271,8 +277,9 @@ export default function ChatScreen() {
           ...current,
           user: response.user,
           prompts: response.prompts,
-          documents: response.documents,
+          documents: response.documents || [],
           chatDocuments: response.chatDocuments || [],
+          submissions: response.submissions || [],
           histories: response.histories,
           activeHistoryId: null,
           messages: [],
@@ -305,6 +312,7 @@ export default function ChatScreen() {
         prompts: promptsOverride ?? current.prompts,
         documents: documentsOverride ?? current.documents,
         chatDocuments: current.chatDocuments,
+        submissions: current.submissions,
         histories: nextHistories,
         activeHistoryId: history.id,
         messages: history.messages || [],
@@ -495,12 +503,13 @@ export default function ChatScreen() {
       const payloadFiles = await Promise.all(
         files.map(async (file) => {
           const extension = getExtension(file.name);
-          if (extension === ".pdf") {
+          if (extension === ".pdf" || file.type.startsWith("image/") || IMAGE_EXTENSIONS.includes(extension)) {
             const bytes = new Uint8Array(await file.arrayBuffer());
             return {
               name: file.name,
               encoding: "base64",
               content: bytesToBase64(bytes),
+              mimeType: file.type,
             };
           }
 
@@ -508,6 +517,7 @@ export default function ChatScreen() {
             name: file.name,
             encoding: "utf8",
             content: await file.text(),
+            mimeType: file.type,
           };
         }),
       );
@@ -536,6 +546,62 @@ export default function ChatScreen() {
       });
     } finally {
       setIsUploading(false);
+      event.target.value = "";
+    }
+  }
+
+  async function handleSubmissionUpload(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) {
+      return;
+    }
+
+    setIsSubmittingDocument(true);
+    setNotice({ text: "", tone: "" });
+
+    try {
+      const payloadFiles = await Promise.all(
+        files.map(async (file) => {
+          const extension = getExtension(file.name);
+          if (file.type.startsWith("image/") || extension === ".pdf" || IMAGE_EXTENSIONS.includes(extension)) {
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            return {
+              name: file.name,
+              encoding: "base64",
+              content: bytesToBase64(bytes),
+              mimeType: file.type,
+            };
+          }
+
+          return {
+            name: file.name,
+            encoding: "utf8",
+            content: await file.text(),
+            mimeType: file.type,
+          };
+        }),
+      );
+
+      const response = await fetchJson("/api/submission/upload", {
+        method: "POST",
+        body: { files: payloadFiles },
+      });
+
+      setAppState((current) => ({
+        ...current,
+        submissions: [...(response.submissions || []), ...(current.submissions || [])],
+      }));
+      setNotice({
+        text: response.message || "Баримтыг илгээлээ.",
+        tone: response.tone || "success",
+      });
+    } catch (uploadError) {
+      setNotice({
+        text: uploadError.message || "Баримт илгээх үед алдаа гарлаа.",
+        tone: "error",
+      });
+    } finally {
+      setIsSubmittingDocument(false);
       event.target.value = "";
     }
   }
@@ -599,12 +665,35 @@ export default function ChatScreen() {
               </div>
             </div>
 
-            <button className="new-chat-rail-button" type="button" onClick={handleNewChat}>
-              <span className="new-chat-rail-icon">
-                <EditIcon />
-              </span>
-              <span>Шинэ чат үүсгэх</span>
-            </button>
+            <div className="chat-sidebar-actions">
+              <button className="new-chat-rail-button new-chat-rail-button-secondary" type="button" onClick={handleNewChat}>
+                <span className="new-chat-rail-icon">
+                  <EditIcon />
+                </span>
+                <span>Шинэ чат үүсгэх</span>
+              </button>
+
+              <input
+                ref={submissionInputRef}
+                id="submission-file-input"
+                type="file"
+                accept=".pdf,image/*,.txt,.md,.json,.csv"
+                multiple
+                hidden
+                onChange={handleSubmissionUpload}
+              />
+              <button
+                className="new-chat-rail-button new-chat-rail-button-secondary"
+                type="button"
+                onClick={() => submissionInputRef.current?.click()}
+                disabled={isSubmittingDocument}
+              >
+                <span className="new-chat-rail-icon">
+                  <UploadIcon />
+                </span>
+                <span>{isSubmittingDocument ? "Баримт илгээж байна..." : "Баримт илгээх"}</span>
+              </button>
+            </div>
 
             <div className="chat-history-block">
               <p className="chat-history-label">Chat History</p>
@@ -922,6 +1011,16 @@ function PlusIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function UploadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 16V4" />
+      <path d="M7 9l5-5 5 5" />
+      <path d="M20 16v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3" />
     </svg>
   );
 }

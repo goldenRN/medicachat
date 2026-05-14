@@ -250,6 +250,14 @@ def extract_query_tokens(question: str) -> list[str]:
     return list(dict.fromkeys(filtered))
 
 
+def collect_search_terms(question: str) -> list[str]:
+    query_tokens = extract_query_tokens(question)
+    person_query = extract_person_query(question)
+    person_tokens = person_query["tokens"] if person_query else []
+    terms = [*person_tokens, *query_tokens]
+    return list(dict.fromkeys(term for term in terms if term))
+
+
 def transliterate_cyrillic_to_latin(text: str) -> str:
     return "".join(CYRILLIC_TO_LATIN_MAP.get(char, char) for char in str(text).lower())
 
@@ -921,6 +929,32 @@ def should_force_local_answer(
 
     person_query = extract_person_query(question)
     if person_query and not has_confident_match(question, ranked_docs):
+        return True
+    return False
+
+
+def needs_full_document_scan(
+    question: str,
+    history_messages: list[dict[str, Any]] | None = None,
+) -> bool:
+    history_messages = history_messages or []
+    normalized = normalize_question_for_intent(question)
+    if is_detail_followup_request(question, normalized):
+        return True
+    if is_count_question(normalized) or is_list_question(normalized):
+        return True
+    return False
+
+
+def should_skip_document_search(
+    question: str,
+    history_messages: list[dict[str, Any]] | None = None,
+) -> bool:
+    history_messages = history_messages or []
+    normalized = normalize_question_for_intent(question)
+    if is_greeting_question(question, normalized) or is_today_question(question, normalized):
+        return True
+    if is_site_information_question(question, history_messages):
         return True
     return False
 
