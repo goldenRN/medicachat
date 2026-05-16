@@ -234,7 +234,12 @@ export default function AdminScreen() {
       const payloadFiles = await Promise.all(
         files.map(async (file) => {
           const extension = getExtension(file.name);
-          if (extension === ".pdf" || file.type.startsWith("image/") || IMAGE_EXTENSIONS.includes(extension)) {
+          if (
+            extension === ".pdf" ||
+            extension === ".docx" ||
+            file.type.startsWith("image/") ||
+            IMAGE_EXTENSIONS.includes(extension)
+          ) {
             const bytes = new Uint8Array(await file.arrayBuffer());
             return {
               name: file.name,

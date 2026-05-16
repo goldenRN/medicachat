@@ -5,6 +5,7 @@ import mimetypes
 import re
 import shutil
 import subprocess
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -36,6 +37,15 @@ IMAGE_EXTENSIONS = {
 }
 
 OCR_PSMS = ("6", "11", "4")
+DOCX_XML_PARTS = (
+    "word/document.xml",
+    "word/header1.xml",
+    "word/header2.xml",
+    "word/header3.xml",
+    "word/footer1.xml",
+    "word/footer2.xml",
+    "word/footer3.xml",
+)
 
 
 def folder_storage_name(folder: str) -> str:
@@ -125,6 +135,34 @@ def parse_uploaded_file(file_payload: dict[str, str], uploader_email: str) -> di
             "warning": f'"{safe_name}" зургаас OCR ашиглан текст уншлаа.',
         }
 
+    if extension == ".docx":
+        raw_base64 = str(file_payload.get("content", "")).strip()
+        if not raw_base64:
+            return None
+        try:
+            saved_path.write_bytes(base64.b64decode(raw_base64, validate=False))
+        except Exception:
+            return {
+                "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
+                "warning": f'"{safe_name}" Word файлаас текст уншиж чадсангүй.',
+            }
+        extracted_text = extract_docx_text(saved_path).strip()
+        if not extracted_text:
+            return {
+                "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
+                "warning": f'"{safe_name}" Word файлаас танигдах текст олдсонгүй.',
+            }
+        return {
+            "document": build_document_record(
+                safe_name,
+                uploader_email,
+                extracted_text,
+                folder_name,
+                relative_storage_path,
+            ),
+            "warning": None,
+        }
+
     content = str(file_payload.get("content", "")).strip()
     if not content:
         return None
@@ -174,6 +212,12 @@ def recover_uploaded_file(saved_path: Path) -> dict[str, object] | None:
     if extension in IMAGE_EXTENSIONS:
         return recover_submission_file(saved_path, title, uploader_email, folder_name)
 
+    if extension == ".docx":
+        extracted_text = extract_docx_text(saved_path).strip()
+        if not extracted_text:
+            return None
+        return build_document_record(title, uploader_email, extracted_text, folder_name, storage_reference)
+
     try:
         content = saved_path.read_text(encoding="utf-8").strip()
     except Exception:
@@ -194,6 +238,45 @@ def extract_pdf_text(pdf_path: Path) -> str:
         return result.stdout
     except Exception:
         return ""
+
+
+def extract_docx_text(docx_path: Path) -> str:
+    sections: list[str] = []
+    try:
+        with zipfile.ZipFile(docx_path) as archive:
+            names = set(archive.namelist())
+            for part_name in DOCX_XML_PARTS:
+                if part_name not in names:
+                    continue
+                xml_text = archive.read(part_name).decode("utf-8", errors="ignore")
+                section_text = extract_text_from_wordprocessingml(xml_text)
+                if section_text:
+                    sections.append(section_text)
+    except Exception:
+        return ""
+    return normalize_whitespace("\n\n".join(section for section in sections if section))
+
+
+def extract_text_from_wordprocessingml(xml_text: str) -> str:
+    prepared = xml_text
+    prepared = re.sub(r"<w:tab(?:\s[^>]*)?/>", "\t", prepared)
+    prepared = re.sub(r"<w:br(?:\s[^>]*)?/>", "\n", prepared)
+    prepared = re.sub(r"</w:p>", "\n", prepared)
+    prepared = re.sub(r"</w:tr>", "\n", prepared)
+    prepared = re.sub(r"</w:tc>", " ", prepared)
+    prepared = re.sub(r"<[^>]+>", "", prepared)
+
+    # Basic XML entity cleanup for common Word content.
+    prepared = (
+        prepared.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", '"')
+        .replace("&apos;", "'")
+    )
+
+    lines = [normalize_whitespace(line) for line in prepared.splitlines()]
+    return "\n".join(line for line in lines if line)
 
 
 def extract_pdf_text_with_ocr(pdf_path: Path) -> str:

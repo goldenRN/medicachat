@@ -12,6 +12,7 @@ import {
   getExtension,
   getStoredToken,
   initialsFromEmail,
+  optimizeImageForUpload,
 } from "@/lib/session";
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".heic", ".heif"];
@@ -503,13 +504,25 @@ export default function ChatScreen() {
       const payloadFiles = await Promise.all(
         files.map(async (file) => {
           const extension = getExtension(file.name);
-          if (extension === ".pdf" || file.type.startsWith("image/") || IMAGE_EXTENSIONS.includes(extension)) {
-            const bytes = new Uint8Array(await file.arrayBuffer());
+          if (
+            extension === ".pdf" ||
+            extension === ".docx" ||
+            file.type.startsWith("image/") ||
+            IMAGE_EXTENSIONS.includes(extension)
+          ) {
+            const optimized =
+              file.type.startsWith("image/")
+                ? await optimizeImageForUpload(file)
+                : {
+                    fileName: file.name,
+                    mimeType: file.type,
+                    bytes: new Uint8Array(await file.arrayBuffer()),
+                  };
             return {
-              name: file.name,
+              name: optimized.fileName,
               encoding: "base64",
-              content: bytesToBase64(bytes),
-              mimeType: file.type,
+              content: bytesToBase64(optimized.bytes),
+              mimeType: optimized.mimeType,
             };
           }
 
@@ -563,13 +576,25 @@ export default function ChatScreen() {
       const payloadFiles = await Promise.all(
         files.map(async (file) => {
           const extension = getExtension(file.name);
-          if (file.type.startsWith("image/") || extension === ".pdf" || IMAGE_EXTENSIONS.includes(extension)) {
-            const bytes = new Uint8Array(await file.arrayBuffer());
+          if (
+            file.type.startsWith("image/") ||
+            extension === ".pdf" ||
+            extension === ".docx" ||
+            IMAGE_EXTENSIONS.includes(extension)
+          ) {
+            const optimized =
+              file.type.startsWith("image/")
+                ? await optimizeImageForUpload(file)
+                : {
+                    fileName: file.name,
+                    mimeType: file.type,
+                    bytes: new Uint8Array(await file.arrayBuffer()),
+                  };
             return {
-              name: file.name,
+              name: optimized.fileName,
               encoding: "base64",
-              content: bytesToBase64(bytes),
-              mimeType: file.type,
+              content: bytesToBase64(optimized.bytes),
+              mimeType: optimized.mimeType,
             };
           }
 

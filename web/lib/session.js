@@ -44,3 +44,85 @@ export function bytesToBase64(bytes) {
   });
   return window.btoa(binary);
 }
+
+
+function changeExtension(filename, nextExtension) {
+  const lastDot = String(filename || "").lastIndexOf(".");
+  if (lastDot < 0) {
+    return `${filename}${nextExtension}`;
+  }
+  return `${filename.slice(0, lastDot)}${nextExtension}`;
+}
+
+
+export async function optimizeImageForUpload(file, options = {}) {
+  const {
+    maxWidth = 1600,
+    maxHeight = 1600,
+    quality = 0.82,
+  } = options;
+
+  if (!file.type.startsWith("image/")) {
+    return {
+      fileName: file.name,
+      mimeType: file.type,
+      bytes: new Uint8Array(await file.arrayBuffer()),
+    };
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxWidth / bitmap.width, maxHeight / bitmap.height);
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Canvas context unavailable");
+    }
+
+    context.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const targetType = file.type === "image/png" ? "image/png" : "image/jpeg";
+    const optimizedBlob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, targetType, targetType === "image/png" ? undefined : quality),
+    );
+
+    if (!optimizedBlob) {
+      throw new Error("Image optimization failed");
+    }
+
+    const optimizedBytes = new Uint8Array(await optimizedBlob.arrayBuffer());
+    const originalBytes = new Uint8Array(await file.arrayBuffer());
+    if (optimizedBytes.length >= originalBytes.length) {
+      return {
+        fileName: file.name,
+        mimeType: file.type,
+        bytes: originalBytes,
+      };
+    }
+
+    const nextFileName =
+      targetType === "image/jpeg" && !/\.(jpe?g)$/i.test(file.name)
+        ? changeExtension(file.name, ".jpg")
+        : targetType === "image/png" && !/\.png$/i.test(file.name)
+          ? changeExtension(file.name, ".png")
+          : file.name;
+
+    return {
+      fileName: nextFileName,
+      mimeType: targetType,
+      bytes: optimizedBytes,
+    };
+  } catch {
+    return {
+      fileName: file.name,
+      mimeType: file.type,
+      bytes: new Uint8Array(await file.arrayBuffer()),
+    };
+  }
+}

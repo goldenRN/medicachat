@@ -365,6 +365,7 @@ def extract_person_query(question: str) -> dict[str, Any] | None:
         return None
     has_person_hint = any(hint in normalized_question for hint in PERSON_QUERY_HINTS)
     patterns = [
+        r"\b([A-Za-zА-Яа-яӨөҮүЁё0-9\-]+?)\s*(?:iin|iinh|yn|in|ийн|ын|ний|ны)\s+(?:мэдээлэл|medeelel|баримт|barimt|шинжилгээ|shinjilgee)",
         r"([A-Za-zА-Яа-яӨөҮүЁё0-9\- ]+?)\s+(?:шинжилгээ(?:ний)?|хариу|үр\s*дүн)",
         r"([A-Za-zА-Яа-яӨөҮүЁё0-9\- ]+?)\s+(?:shinjilgee(?:nii|ni)?|hariu|ur\s*dun|result)",
         r"([A-Za-zА-Яа-яӨөҮүЁё0-9\- ]+?)\s+(?:баримт(?:аас|ын)?|эмчид|анхаарах|дүгнэлт|онош|зөвлөгөө)",
@@ -716,6 +717,24 @@ def select_reply_documents(
     followup_context = resolve_followup_context(question, all_documents, history_messages)
     if followup_context:
         return followup_context["documents"][:3]
+    person_query = extract_person_query(question)
+    if person_query and ranked_docs:
+        top_person_score = ranked_docs[0].get("personMatchScore", 0)
+        if top_person_score >= 90:
+            exact_person_documents = [
+                document
+                for document in ranked_docs
+                if document.get("personMatchScore", 0) >= 90
+            ]
+            unique_documents: list[dict[str, Any]] = []
+            seen_titles: set[str] = set()
+            for document in exact_person_documents:
+                title = str(document.get("title", ""))
+                if title in seen_titles:
+                    continue
+                seen_titles.add(title)
+                unique_documents.append(document)
+            return unique_documents[:3]
     if has_confident_match(question, ranked_docs):
         return ranked_docs[:3]
     return []
