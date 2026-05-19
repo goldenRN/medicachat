@@ -16,6 +16,7 @@ import {
 } from "@/lib/session";
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".heic", ".heif"];
+const BINARY_UPLOAD_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"];
 
 const EMPTY_STATE = {
   user: null,
@@ -505,8 +506,7 @@ export default function ChatScreen() {
         files.map(async (file) => {
           const extension = getExtension(file.name);
           if (
-            extension === ".pdf" ||
-            extension === ".docx" ||
+            BINARY_UPLOAD_EXTENSIONS.includes(extension) ||
             file.type.startsWith("image/") ||
             IMAGE_EXTENSIONS.includes(extension)
           ) {
@@ -578,8 +578,7 @@ export default function ChatScreen() {
           const extension = getExtension(file.name);
           if (
             file.type.startsWith("image/") ||
-            extension === ".pdf" ||
-            extension === ".docx" ||
+            BINARY_UPLOAD_EXTENSIONS.includes(extension) ||
             IMAGE_EXTENSIONS.includes(extension)
           ) {
             const optimized =
@@ -702,7 +701,7 @@ export default function ChatScreen() {
                 ref={submissionInputRef}
                 id="submission-file-input"
                 type="file"
-                accept=".pdf,image/*,.txt,.md,.json,.csv"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,image/*,.txt,.md,.json,.csv"
                 multiple
                 hidden
                 onChange={handleSubmissionUpload}
@@ -903,7 +902,7 @@ export default function ChatScreen() {
                   ref={fileInputRef}
                   id="chat-file-input"
                   type="file"
-                  accept=".pdf,.txt,.md,.json,.csv"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.json,.csv"
                   multiple
                   hidden
                   onChange={handleComposerUpload}

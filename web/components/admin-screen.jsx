@@ -15,6 +15,7 @@ import {
 } from "@/lib/session";
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".heic", ".heif"];
+const BINARY_UPLOAD_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"];
 
 export default function AdminScreen() {
   const router = useRouter();
@@ -234,12 +235,11 @@ export default function AdminScreen() {
       const payloadFiles = await Promise.all(
         files.map(async (file) => {
           const extension = getExtension(file.name);
-          if (
-            extension === ".pdf" ||
-            extension === ".docx" ||
-            file.type.startsWith("image/") ||
-            IMAGE_EXTENSIONS.includes(extension)
-          ) {
+      if (
+        BINARY_UPLOAD_EXTENSIONS.includes(extension) ||
+        file.type.startsWith("image/") ||
+        IMAGE_EXTENSIONS.includes(extension)
+      ) {
             const bytes = new Uint8Array(await file.arrayBuffer());
             return {
               name: file.name,
@@ -593,7 +593,7 @@ export default function AdminScreen() {
                       ref={fileInputRef}
                       id="admin-file-input"
                       type="file"
-                      accept=".txt,.md,.json,.csv,.pdf,image/*,.heic,.heif"
+                accept=".txt,.md,.json,.csv,.pdf,.doc,.docx,.xls,.xlsx,image/*,.heic,.heif"
                       multiple
                       hidden
                       onChange={handleFileUpload}

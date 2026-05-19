@@ -26,11 +26,15 @@ export default function LoginScreen() {
     setIsSubmitting(true);
 
     try {
+      const formData = new FormData(event.currentTarget);
+      const emailValue = String(formData.get("email") || "").trim();
+      const passwordValue = String(formData.get("password") || "").trim();
+
       const response = await fetchJson("/api/login", {
         method: "POST",
         body: {
-          email: email.trim(),
-          password: password.trim(),
+          email: emailValue,
+          password: passwordValue,
         },
         redirectOnAuthFailure: false,
       });
@@ -54,8 +58,8 @@ export default function LoginScreen() {
           <div className="logo-lockup">
             <LogoMark />
             <div>
-              <p className="eyebrow">Сос Медика Монгол</p>
-              <h2>Ухаалаг туслах</h2>
+              <p className="eyebrow">AI Knowledge Assistant</p>
+              <h2>СОС Медикал Монгол</h2>
             </div>
           </div>
         </section>

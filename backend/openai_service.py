@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
+from pathlib import Path
 from urllib import error, request
 
 from .config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, OPENAI_TIMEOUT_SECONDS
@@ -48,6 +50,56 @@ def maybe_generate_openai_answer(
     if not text:
         raise RuntimeError("OpenAI хариултаас текст уншиж чадсангүй.")
     return text
+
+
+def maybe_extract_openai_image_text(image_bytes: bytes, mime_type: str) -> str | None:
+    if not is_openai_configured() or not image_bytes:
+        return None
+
+    payload = {
+        "model": OPENAI_MODEL,
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Extract readable text from this medical document or receipt image. "
+                            "Return only the recognized text, preserving line breaks where possible. "
+                            "If the text is too unclear to trust, return exactly: UNREADABLE"
+                        ),
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode('ascii')}",
+                    },
+                ],
+            }
+        ],
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        f"{OPENAI_BASE_URL}/responses",
+        data=data,
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with request.urlopen(req, timeout=OPENAI_TIMEOUT_SECONDS) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+
+    text = extract_response_text(body)
+    cleaned = normalize_multiline_text(text).strip()
+    if not cleaned or cleaned.upper() == "UNREADABLE":
+        return None
+    return cleaned
 
 
 def build_openai_input(

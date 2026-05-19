@@ -1,5 +1,5 @@
 function getBackendBaseUrl() {
-  const configuredBase = process.env.BACKEND_API_BASE_URL || "http://127.0.0.1:4173/api";
+  const configuredBase = process.env.BACKEND_API_BASE_URL || "http://127.0.0.1:4000/api";
   const normalizedBase = configuredBase.replace(/\/+$/, "");
   return normalizedBase.endsWith("/api") ? normalizedBase : `${normalizedBase}/api`;
 }
@@ -15,7 +15,6 @@ async function proxy(request, { params }) {
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("connection");
-  headers.delete("content-length");
 
   const init = {
     method: request.method,
@@ -40,4 +39,4 @@ async function proxy(request, { params }) {
   });
 }
 
-export { proxy as GET, proxy as POST };
+export { proxy as GET, proxy as POST, proxy as OPTIONS };

@@ -124,6 +124,7 @@ def serve_storage_file(handler: BaseHTTPRequestHandler, safe_path: Path, downloa
 
     try:
         handler.send_response(200)
+        handler.send_cors_headers()
         handler.send_header("Content-Type", content_type)
         handler.send_header("Content-Length", str(prepared_path.stat().st_size))
         handler.send_header("Content-Disposition", f'inline; filename="{Path(download_name).name}"')
@@ -140,6 +141,12 @@ def serve_storage_file(handler: BaseHTTPRequestHandler, safe_path: Path, downloa
 
 class AppHandler(BaseHTTPRequestHandler):
     server_version = "SOSMedicaPython/1.0"
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        self.send_cors_headers()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_GET(self) -> None:
         try:
@@ -263,8 +270,25 @@ class AppHandler(BaseHTTPRequestHandler):
         body = self.read_json_body()
 
         if parsed.path == "/api/login":
+            email = body.get("email", "")
+            password = body.get("password", "")
+            print(
+                "[api] /api/login request",
+                {
+                    "email": str(email).strip().lower(),
+                    "password_length": len(str(password or "").strip()),
+                    "remote": self.client_address[0] if self.client_address else "",
+                    "user_agent": self.headers.get("User-Agent", "")[:120],
+                },
+                flush=True,
+            )
             user = find_user_by_credentials(body.get("email", ""), body.get("password", ""))
             if not user:
+                print(
+                    "[api] /api/login response",
+                    {"email": str(email).strip().lower(), "status": 401},
+                    flush=True,
+                )
                 self.send_json(401, {"error": "И-мэйл эсвэл нууц үг буруу байна."})
                 return
             token = secrets.token_hex(16)
@@ -274,6 +298,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 "role": user["role"],
                 "name": user["name"],
             }
+            print(
+                "[api] /api/login response",
+                {"email": user["email"], "status": 200, "role": user["role"]},
+                flush=True,
+            )
             self.send_json(200, {"token": token, "user": sanitize_user(user)})
             return
 
@@ -628,6 +657,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def serve_static(self, raw_path: str) -> None:
         if raw_path == "/":
             self.send_response(302)
+            self.send_cors_headers()
             self.send_header("Location", "/login")
             self.end_headers()
             return
@@ -650,6 +680,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         self.send_response(200)
+        self.send_cors_headers()
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(target.stat().st_size))
         self.send_header("Last-Modified", formatdate(target.stat().st_mtime, usegmt=True))
@@ -673,9 +704,39 @@ class AppHandler(BaseHTTPRequestHandler):
             return None
         return session
 
+    def get_cors_origin(self) -> str | None:
+        origin = str(self.headers.get("Origin", "") or "").strip()
+        if not origin:
+            return None
+
+        allowed_prefixes = (
+            "http://127.0.0.1:",
+            "http://localhost:",
+            "http://[::1]:",
+            "https://127.0.0.1:",
+            "https://localhost:",
+            "https://[::1]:",
+        )
+        allowed_exact = {
+            "http://chat.sosmedica.mn",
+            "https://chat.sosmedica.mn",
+        }
+        if origin.startswith(allowed_prefixes) or origin in allowed_exact:
+            return origin
+        return None
+
+    def send_cors_headers(self) -> None:
+        origin = self.get_cors_origin()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
     def send_json(self, status_code: int, payload: dict[str, Any]) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
+        self.send_cors_headers()
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -714,6 +775,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def send_text(self, status_code: int, text: str) -> None:
         data = text.encode("utf-8")
         self.send_response(status_code)
+        self.send_cors_headers()
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()

@@ -20,7 +20,16 @@ URLs:
 
 ```text
 Frontend (Next.js): http://127.0.0.1:3000
-Backend API/static: http://127.0.0.1:4173
+Backend API/static: http://127.0.0.1:4000
+```
+
+Backend нь default-аар `127.0.0.1:4000` дээр асна. Frontend нь `/api/*` proxy ашигладаг тул `3000`, `3001`, эсвэл өөр ямар ч localhost port дээр ажиллаж байсан backend-тай холбогдоно.
+
+Хэрэв backend port-оо солих бол:
+
+```bash
+BACKEND_PORT=5000 npm start
+BACKEND_API_BASE_URL=http://127.0.0.1:5000/api npm run frontend
 ```
 
 ## AI provider холбох

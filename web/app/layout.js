@@ -4,8 +4,8 @@ export const metadata = {
   title: "SOS Medica AI Chatbot",
   description: "SOS Medica Mongolia document-aware assistant",
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/profile.jpg",
+    shortcut: "/profile.jpg",
     apple: "/profile.jpg",
   },
 };

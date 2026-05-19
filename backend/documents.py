@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from .config import DATA_DIR, UPLOAD_DIR
+from .openai_service import maybe_extract_openai_image_text
 from .text_utils import (
     derive_tags,
     extract_name_from_title,
@@ -35,6 +36,12 @@ IMAGE_EXTENSIONS = {
     ".heic",
     ".heif",
 }
+OFFICE_BINARY_EXTENSIONS = {
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+}
 
 OCR_PSMS = ("6", "11", "4")
 DOCX_XML_PARTS = (
@@ -46,6 +53,8 @@ DOCX_XML_PARTS = (
     "word/footer2.xml",
     "word/footer3.xml",
 )
+XLSX_SHARED_STRINGS_PART = "xl/sharedStrings.xml"
+XLSX_SHEET_PART_PREFIX = "xl/worksheets/"
 
 
 def folder_storage_name(folder: str) -> str:
@@ -119,6 +128,10 @@ def parse_uploaded_file(file_payload: dict[str, str], uploader_email: str) -> di
         languages = get_tesseract_languages()
         ocr_language = "eng+mon" if "mon" in languages else "eng"
         extracted_text = extract_image_text_with_tesseract(saved_path, ocr_language).strip()
+        used_ai_ocr = False
+        if not extracted_text or is_unreadable_ocr_text(extracted_text):
+            extracted_text = extract_image_text_with_openai(saved_path).strip()
+            used_ai_ocr = bool(extracted_text)
         if not extracted_text or is_unreadable_ocr_text(extracted_text):
             return {
                 "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
@@ -132,7 +145,11 @@ def parse_uploaded_file(file_payload: dict[str, str], uploader_email: str) -> di
                 folder_name,
                 relative_storage_path,
             ),
-            "warning": f'"{safe_name}" зургаас OCR ашиглан текст уншлаа.',
+            "warning": (
+                f'"{safe_name}" зургаас OpenAI vision ашиглан текст уншлаа.'
+                if used_ai_ocr
+                else f'"{safe_name}" зургаас OCR ашиглан текст уншлаа.'
+            ),
         }
 
     if extension == ".docx":
@@ -161,6 +178,90 @@ def parse_uploaded_file(file_payload: dict[str, str], uploader_email: str) -> di
                 relative_storage_path,
             ),
             "warning": None,
+        }
+
+    if extension == ".doc":
+        raw_base64 = str(file_payload.get("content", "")).strip()
+        if not raw_base64:
+            return None
+        try:
+            saved_path.write_bytes(base64.b64decode(raw_base64, validate=False))
+        except Exception:
+            return {
+                "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
+                "warning": f'"{safe_name}" Word файлаас текст уншиж чадсангүй.',
+            }
+        extracted_text = extract_legacy_office_text(saved_path).strip()
+        if not extracted_text:
+            return {
+                "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
+                "warning": f'"{safe_name}" Word файлаас танигдах текст олдсонгүй.',
+            }
+        return {
+            "document": build_document_record(
+                safe_name,
+                uploader_email,
+                extracted_text,
+                folder_name,
+                relative_storage_path,
+            ),
+            "warning": f'"{safe_name}" legacy Word файлаас fallback text extraction ашиглалаа.',
+        }
+
+    if extension == ".xlsx":
+        raw_base64 = str(file_payload.get("content", "")).strip()
+        if not raw_base64:
+            return None
+        try:
+            saved_path.write_bytes(base64.b64decode(raw_base64, validate=False))
+        except Exception:
+            return {
+                "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
+                "warning": f'"{safe_name}" Excel файлаас текст уншиж чадсангүй.',
+            }
+        extracted_text = extract_xlsx_text(saved_path).strip()
+        if not extracted_text:
+            return {
+                "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
+                "warning": f'"{safe_name}" Excel файлаас танигдах текст олдсонгүй.',
+            }
+        return {
+            "document": build_document_record(
+                safe_name,
+                uploader_email,
+                extracted_text,
+                folder_name,
+                relative_storage_path,
+            ),
+            "warning": None,
+        }
+
+    if extension == ".xls":
+        raw_base64 = str(file_payload.get("content", "")).strip()
+        if not raw_base64:
+            return None
+        try:
+            saved_path.write_bytes(base64.b64decode(raw_base64, validate=False))
+        except Exception:
+            return {
+                "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
+                "warning": f'"{safe_name}" Excel файлаас текст уншиж чадсангүй.',
+            }
+        extracted_text = extract_legacy_office_text(saved_path).strip()
+        if not extracted_text:
+            return {
+                "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
+                "warning": f'"{safe_name}" Excel файлаас танигдах текст олдсонгүй.',
+            }
+        return {
+            "document": build_document_record(
+                safe_name,
+                uploader_email,
+                extracted_text,
+                folder_name,
+                relative_storage_path,
+            ),
+            "warning": f'"{safe_name}" legacy Excel файлаас fallback text extraction ашиглалаа.',
         }
 
     content = str(file_payload.get("content", "")).strip()
@@ -218,6 +319,24 @@ def recover_uploaded_file(saved_path: Path) -> dict[str, object] | None:
             return None
         return build_document_record(title, uploader_email, extracted_text, folder_name, storage_reference)
 
+    if extension == ".doc":
+        extracted_text = extract_legacy_office_text(saved_path).strip()
+        if not extracted_text:
+            return None
+        return build_document_record(title, uploader_email, extracted_text, folder_name, storage_reference)
+
+    if extension == ".xlsx":
+        extracted_text = extract_xlsx_text(saved_path).strip()
+        if not extracted_text:
+            return None
+        return build_document_record(title, uploader_email, extracted_text, folder_name, storage_reference)
+
+    if extension == ".xls":
+        extracted_text = extract_legacy_office_text(saved_path).strip()
+        if not extracted_text:
+            return None
+        return build_document_record(title, uploader_email, extracted_text, folder_name, storage_reference)
+
     try:
         content = saved_path.read_text(encoding="utf-8").strip()
     except Exception:
@@ -255,6 +374,95 @@ def extract_docx_text(docx_path: Path) -> str:
     except Exception:
         return ""
     return normalize_whitespace("\n\n".join(section for section in sections if section))
+
+
+def extract_xlsx_text(xlsx_path: Path) -> str:
+    sections: list[str] = []
+    try:
+        with zipfile.ZipFile(xlsx_path) as archive:
+            shared_strings = extract_xlsx_shared_strings(archive)
+            sheet_names = sorted(
+                name for name in archive.namelist() if name.startswith(XLSX_SHEET_PART_PREFIX) and name.endswith(".xml")
+            )
+            for sheet_name in sheet_names:
+                xml_text = archive.read(sheet_name).decode("utf-8", errors="ignore")
+                sheet_text = extract_text_from_spreadsheetml(xml_text, shared_strings)
+                if sheet_text:
+                    sections.append(sheet_text)
+    except Exception:
+        return ""
+    return normalize_whitespace("\n\n".join(section for section in sections if section))
+
+
+def extract_xlsx_shared_strings(archive: zipfile.ZipFile) -> list[str]:
+    if XLSX_SHARED_STRINGS_PART not in set(archive.namelist()):
+        return []
+    try:
+        xml_text = archive.read(XLSX_SHARED_STRINGS_PART).decode("utf-8", errors="ignore")
+    except Exception:
+        return []
+
+    entries = re.findall(r"<si\b.*?>.*?</si>", xml_text, flags=re.DOTALL)
+    return [normalize_whitespace(extract_text_from_spreadsheetml_inline(entry)) for entry in entries]
+
+
+def extract_text_from_spreadsheetml(xml_text: str, shared_strings: list[str]) -> str:
+    rows = re.findall(r"<row\b.*?>.*?</row>", xml_text, flags=re.DOTALL)
+    rendered_rows: list[str] = []
+    for row_xml in rows:
+        values: list[str] = []
+        cells = re.findall(r"<c\b([^>]*)>(.*?)</c>", row_xml, flags=re.DOTALL)
+        for attributes, cell_body in cells:
+            cell_type_match = re.search(r'\bt="([^"]+)"', attributes)
+            cell_type = cell_type_match.group(1) if cell_type_match else ""
+            value_match = re.search(r"<v>(.*?)</v>", cell_body, flags=re.DOTALL)
+            inline_match = re.search(r"<is\b.*?>.*?</is>", cell_body, flags=re.DOTALL)
+            value = ""
+            if cell_type == "s" and value_match:
+                try:
+                    shared_index = int(value_match.group(1).strip())
+                except ValueError:
+                    shared_index = -1
+                if 0 <= shared_index < len(shared_strings):
+                    value = shared_strings[shared_index]
+            elif inline_match:
+                value = extract_text_from_spreadsheetml_inline(inline_match.group(0))
+            elif value_match:
+                value = normalize_whitespace(value_match.group(1))
+            if value:
+                values.append(value)
+        if values:
+            rendered_rows.append(" | ".join(values))
+    return "\n".join(rendered_rows)
+
+
+def extract_text_from_spreadsheetml_inline(xml_text: str) -> str:
+    prepared = re.sub(r"</(?:t|r|p)>", " ", xml_text)
+    prepared = re.sub(r"<[^>]+>", "", prepared)
+    prepared = (
+        prepared.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", '"')
+        .replace("&apos;", "'")
+    )
+    return normalize_whitespace(prepared)
+
+
+def extract_legacy_office_text(file_path: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["strings", "-n", "4", str(file_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return ""
+
+    lines = [normalize_whitespace(line) for line in result.stdout.splitlines()]
+    filtered = [line for line in lines if line and len(line) > 2]
+    return "\n".join(filtered[:400])
 
 
 def extract_text_from_wordprocessingml(xml_text: str) -> str:
@@ -327,6 +535,28 @@ def extract_image_text_with_tesseract(image_path: Path, language: str) -> str:
             try:
                 if temp_path.exists():
                     temp_path.unlink()
+            except OSError:
+                pass
+
+
+def extract_image_text_with_openai(image_path: Path) -> str:
+    prepared_path, mime_type, should_cleanup = prepare_image_for_browser(image_path)
+    try:
+        image_bytes = prepared_path.read_bytes()
+    except Exception:
+        if should_cleanup and prepared_path.exists():
+            try:
+                prepared_path.unlink()
+            except OSError:
+                pass
+        return ""
+
+    try:
+        return maybe_extract_openai_image_text(image_bytes, mime_type) or ""
+    finally:
+        if should_cleanup and prepared_path.exists():
+            try:
+                prepared_path.unlink()
             except OSError:
                 pass
         if should_cleanup and prepared_path.exists():
@@ -567,6 +797,8 @@ def recover_submission_file(
         languages = get_tesseract_languages()
         ocr_language = "eng+mon" if "mon" in languages else "eng"
         extracted_text = extract_image_text_with_tesseract(saved_path, ocr_language).strip()
+        if not extracted_text or is_unreadable_ocr_text(extracted_text):
+            extracted_text = extract_image_text_with_openai(saved_path).strip()
         if not extracted_text or is_unreadable_ocr_text(extracted_text):
             return build_scan_pdf_record(title, uploader_email, folder_name)
         return build_document_record(title, uploader_email, extracted_text, folder_name, build_storage_reference(saved_path))

@@ -30,8 +30,8 @@ def normalize_api_key(value: str, placeholders: set[str]) -> str:
     return "" if cleaned in placeholders else cleaned
 
 
-HOST = "127.0.0.1"
-PORT = 4173
+HOST = os.environ.get("BACKEND_HOST", "127.0.0.1").strip() or "127.0.0.1"
+PORT = int(os.environ.get("BACKEND_PORT", "4000") or "4000")
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
