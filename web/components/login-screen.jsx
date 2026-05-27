@@ -16,7 +16,7 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (getStoredToken()) {
-      router.replace("/chat");
+      router.replace("/admin");
     }
   }, [router]);
 
@@ -40,7 +40,7 @@ export default function LoginScreen() {
       });
 
       setStoredToken(response.token);
-      router.replace("/chat");
+      router.replace("/admin");
     } catch (submitError) {
       setError(submitError.message || "Нэвтрэх үед алдаа гарлаа.");
     } finally {

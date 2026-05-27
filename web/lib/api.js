@@ -1,6 +1,6 @@
 "use client";
 
-import { clearStoredToken, getStoredToken } from "@/lib/session";
+import { clearStoredToken, getOrCreateGuestId, getStoredToken } from "@/lib/session";
 
 export async function fetchJson(url, options = {}) {
   const requestOptions = {
@@ -14,6 +14,8 @@ export async function fetchJson(url, options = {}) {
   const token = getStoredToken();
   if (token) {
     requestOptions.headers.Authorization = `Bearer ${token}`;
+  } else {
+    requestOptions.headers["X-Guest-Id"] = getOrCreateGuestId();
   }
 
   if (options.body) {
@@ -41,4 +43,44 @@ export async function fetchJson(url, options = {}) {
   }
 
   return payload;
+}
+
+export async function fetchBlob(url, options = {}) {
+  const requestOptions = {
+    method: options.method || "GET",
+    headers: {
+      ...(options.headers || {}),
+    },
+  };
+
+  const token = getStoredToken();
+  if (token) {
+    requestOptions.headers.Authorization = `Bearer ${token}`;
+  } else {
+    requestOptions.headers["X-Guest-Id"] = getOrCreateGuestId();
+  }
+
+  const response = await fetch(url, requestOptions);
+
+  if (response.status === 401) {
+    clearStoredToken();
+    if (options.redirectOnAuthFailure !== false) {
+      window.location.replace("/login");
+    }
+  }
+
+  if (!response.ok) {
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    throw new Error(payload.error || "Алдаа гарлаа.");
+  }
+
+  return {
+    blob: await response.blob(),
+    contentType: response.headers.get("content-type") || "",
+  };
 }

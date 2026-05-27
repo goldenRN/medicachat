@@ -1,6 +1,7 @@
 "use client";
 
 export const STORAGE_KEY = "sosmedica_chatbot_token";
+export const GUEST_STORAGE_KEY = "sosmedica_chatbot_guest_id";
 
 export function getStoredToken() {
   if (typeof window === "undefined") {
@@ -15,6 +16,31 @@ export function setStoredToken(token) {
 
 export function clearStoredToken() {
   window.localStorage.removeItem(STORAGE_KEY);
+}
+
+export function getStoredGuestId() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem(GUEST_STORAGE_KEY) || "";
+}
+
+export function getOrCreateGuestId() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const existing = getStoredGuestId();
+  if (existing) {
+    return existing;
+  }
+
+  const nextId =
+    typeof window.crypto?.randomUUID === "function"
+      ? window.crypto.randomUUID()
+      : `guest-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  window.localStorage.setItem(GUEST_STORAGE_KEY, nextId);
+  return nextId;
 }
 
 export function initialsFromEmail(email) {

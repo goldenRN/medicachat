@@ -27,10 +27,13 @@ from .documents import (
     copy_document_storage,
     delete_folder_storage,
     delete_document_storage,
+    is_valid_browser_image,
     move_folder_storage,
+    parse_submission_image_file,
     parse_uploaded_file,
     prepare_image_for_browser,
 )
+from .google_translate_service import maybe_translate_text_with_google
 from .store import (
     append_message,
     create_document_submission,
@@ -41,6 +44,7 @@ from .store import (
     delete_history,
     delete_document_record,
     delete_folder,
+    ensure_guest_user,
     ensure_bootstrap,
     find_user_by_credentials,
     get_document_by_id,
@@ -108,10 +112,34 @@ def remove_chat_upload(user_id: str, document_id: str) -> list[dict[str, Any]]:
     return remaining
 
 
-def get_session(handler: BaseHTTPRequestHandler) -> dict[str, str] | None:
+def build_guest_session(handler: BaseHTTPRequestHandler) -> dict[str, str] | None:
+    guest_id = str(handler.headers.get("X-Guest-Id", "") or "").strip()
+    if not guest_id:
+        return None
+    safe_guest_id = "".join(char for char in guest_id if char.isalnum() or char in {"-", "_"})
+    if not safe_guest_id:
+        return None
+    guest_key = safe_guest_id[:48]
+    guest_user_id = f"guest:{safe_guest_id[:80]}"
+    guest_email = f"{guest_key}@guest.sosmedica.mn"
+    ensure_guest_user(guest_user_id, guest_email)
+    return {
+        "token": "",
+        "userId": guest_user_id,
+        "email": guest_email,
+        "role": "guest",
+        "name": "Зочин",
+    }
+
+
+def get_session(handler: BaseHTTPRequestHandler, allow_guest: bool = False) -> dict[str, str] | None:
     raw_header = handler.headers.get("Authorization", "")
     token = raw_header[7:] if raw_header.startswith("Bearer ") else ""
-    return {"token": token, **SESSIONS[token]} if token and token in SESSIONS else None
+    if token and token in SESSIONS:
+        return {"token": token, **SESSIONS[token]}
+    if allow_guest:
+        return build_guest_session(handler)
+    return None
 
 
 def serve_storage_file(handler: BaseHTTPRequestHandler, safe_path: Path, download_name: str) -> None:
@@ -169,12 +197,12 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": str(error) or "Internal server error"})
 
     def handle_api_get(self, parsed) -> None:
-        session = self.require_session()
         if parsed.path == "/api/bootstrap":
-            if not session:
-                return
             query = parse_qs(parsed.query)
             scope = (query.get("scope", ["chat"])[0] or "chat").strip().lower()
+            session = self.require_session(allow_guest=scope != "admin")
+            if not session:
+                return
             include_admin_payload = scope == "admin" and session["role"] == "admin"
             chat_documents = [sanitize_document(document) for document in get_chat_uploads(session["userId"])]
             payload = {
@@ -198,6 +226,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/history":
+            session = self.require_session(allow_guest=True)
             if not session:
                 return
             history_id = parse_qs(parsed.query).get("id", [None])[0]
@@ -209,6 +238,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/admin/document/file":
+            session = self.require_session()
             if not session:
                 return
             if session["role"] != "admin":
@@ -237,6 +267,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/admin/submission/file":
+            session = self.require_session()
             if not session:
                 return
             if session["role"] != "admin":
@@ -259,6 +290,9 @@ class AppHandler(BaseHTTPRequestHandler):
             upload_root = UPLOAD_DIR.resolve()
             if not str(safe_path).startswith(str(upload_root)) or not safe_path.exists() or safe_path.is_dir():
                 self.send_json(404, {"error": "Файл олдсонгүй."})
+                return
+            if safe_path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".heic", ".heif"} and not is_valid_browser_image(safe_path):
+                self.send_json(422, {"error": "Энэ баримтын зураг эвдэрсэн эсвэл буруу хадгалагдсан байна. Дахин илгээнэ үү."})
                 return
 
             serve_storage_file(self, safe_path, str(submission.get("title", safe_path.name)))
@@ -307,23 +341,26 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/logout":
-            session = get_session(self)
+            session = get_session(self, allow_guest=True)
             if session:
                 clear_chat_uploads(session["userId"])
-                SESSIONS.pop(session["token"], None)
+                if session.get("token"):
+                    SESSIONS.pop(session["token"], None)
             self.send_json(200, {"ok": True})
             return
 
-        session = self.require_session()
-        if not session:
-            return
-
         if parsed.path == "/api/history/new":
+            session = self.require_session(allow_guest=True)
+            if not session:
+                return
             history = create_history_record(session["userId"], "Шинэ чат")
             self.send_json(201, {"history": summarize_history(history)})
             return
 
         if parsed.path == "/api/history/rename":
+            session = self.require_session(allow_guest=True)
+            if not session:
+                return
             history_id = str(body.get("historyId", "")).strip()
             title = build_history_title(str(body.get("title", "")).strip())
             if not history_id or not title:
@@ -336,6 +373,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/history/delete":
+            session = self.require_session(allow_guest=True)
+            if not session:
+                return
             history_id = str(body.get("historyId", "")).strip()
             if not history_id:
                 self.send_json(400, {"error": "Chat history ID дутуу байна."})
@@ -347,6 +387,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/upload":
+            session = self.require_session()
+            if not session:
+                return
             if session["role"] != "admin":
                 self.send_json(403, {"error": "Файл нэмэх эрх зөвхөн admin хэрэглэгчид байна."})
                 return
@@ -375,6 +418,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/chat/upload":
+            session = self.require_session(allow_guest=True)
+            if not session:
+                return
             files = body.get("files", [])
             if not isinstance(files, list) or not files:
                 self.send_json(400, {"error": "Upload хийх файл алга."})
@@ -400,6 +446,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/submission/upload":
+            session = self.require_session(allow_guest=True)
+            if not session:
+                return
             files = body.get("files", [])
             if not isinstance(files, list) or not files:
                 self.send_json(400, {"error": "Илгээх баримт алга."})
@@ -408,8 +457,7 @@ class AppHandler(BaseHTTPRequestHandler):
             created_submissions = []
             needs_resubmit = False
             for file_payload in files:
-                submission_payload = {**file_payload, "folder": "Илгээсэн баримт"}
-                parsed_file = parse_uploaded_file(submission_payload, session["email"])
+                parsed_file = parse_submission_image_file(file_payload, session["email"])
                 if not parsed_file or not parsed_file.get("document"):
                     needs_resubmit = True
                     continue
@@ -457,6 +505,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/chat/upload/delete":
+            session = self.require_session(allow_guest=True)
+            if not session:
+                return
             document_id = str(body.get("documentId", "")).strip()
             if not document_id:
                 self.send_json(400, {"error": "Файл ID дутуу байна."})
@@ -468,7 +519,36 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/translate":
+            session = self.require_session(allow_guest=True)
+            if not session:
+                return
+            text = str(body.get("text", "")).strip()
+            source_language = str(body.get("sourceLanguage", "auto")).strip() or "auto"
+            target_language = str(body.get("targetLanguage", "")).strip()
+            if not text:
+                self.send_json(400, {"error": "Орчуулах текстээ оруулна уу."})
+                return
+            if not target_language:
+                self.send_json(400, {"error": "Орчуулах хэлээ сонгоно уу."})
+                return
+
+            try:
+                payload = maybe_translate_text_with_google(
+                    text,
+                    source_language,
+                    target_language,
+                )
+            except RuntimeError as error:
+                self.send_json(502, {"error": str(error) or "Орчуулга хийх үед алдаа гарлаа."})
+                return
+            self.send_json(200, payload)
+            return
+
         if parsed.path == "/api/admin/folder/create":
+            session = self.require_session()
+            if not session:
+                return
             if session["role"] != "admin":
                 self.send_json(403, {"error": "Admin эрх шаардлагатай."})
                 return
@@ -478,6 +558,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/admin/folder/rename":
+            session = self.require_session()
+            if not session:
+                return
             if session["role"] != "admin":
                 self.send_json(403, {"error": "Admin эрх шаардлагатай."})
                 return
@@ -506,6 +589,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/admin/folder/delete":
+            session = self.require_session()
+            if not session:
+                return
             if session["role"] != "admin":
                 self.send_json(403, {"error": "Admin эрх шаардлагатай."})
                 return
@@ -519,6 +605,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/admin/document/delete":
+            session = self.require_session()
+            if not session:
+                return
             if session["role"] != "admin":
                 self.send_json(403, {"error": "Admin эрх шаардлагатай."})
                 return
@@ -538,6 +627,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/admin/submission/delete":
+            session = self.require_session()
+            if not session:
+                return
             if session["role"] != "admin":
                 self.send_json(403, {"error": "Admin эрх шаардлагатай."})
                 return
@@ -556,6 +648,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/admin/document/copy":
+            session = self.require_session()
+            if not session:
+                return
             if session["role"] != "admin":
                 self.send_json(403, {"error": "Admin эрх шаардлагатай."})
                 return
@@ -590,6 +685,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/chat":
+            session = self.require_session(allow_guest=True)
+            if not session:
+                return
             message_text = str(body.get("message", "")).strip()
             preferred_history_id = str(body.get("historyId", "")).strip() or None
             if not message_text:
@@ -697,8 +795,8 @@ class AppHandler(BaseHTTPRequestHandler):
         except json.JSONDecodeError as error:
             raise ValueError("Invalid JSON body") from error
 
-    def require_session(self) -> dict[str, str] | None:
-        session = get_session(self)
+    def require_session(self, allow_guest: bool = False) -> dict[str, str] | None:
+        session = get_session(self, allow_guest=allow_guest)
         if not session:
             self.send_json(401, {"error": "Session дууссан байна. Дахин нэвтэрнэ үү."})
             return None

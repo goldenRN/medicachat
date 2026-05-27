@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import LogoMark from "@/components/logo-mark";
-import { fetchJson } from "@/lib/api";
+import { fetchBlob, fetchJson } from "@/lib/api";
 import {
   bytesToBase64,
   clearStoredToken,
@@ -16,6 +16,50 @@ import {
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".heic", ".heif"];
 const BINARY_UPLOAD_EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"];
+
+function hasSuspiciousSubmissionText(value, title = "") {
+  const text = String(value || "").trim();
+  const normalizedTitle = String(title || "").trim().toLowerCase();
+  if (!text) {
+    return true;
+  }
+  if (normalizedTitle && text.toLowerCase() === normalizedTitle) {
+    return true;
+  }
+  if (/^[-–—\s]/.test(text)) {
+    return true;
+  }
+  if (/\.(png|jpe?g|heic|heif|pdf|docx?|xlsx?)$/i.test(text)) {
+    return true;
+  }
+  if (/[^A-Za-zА-Яа-яӨөҮүЁё0-9\s.,:/#()\-₮]/.test(text)) {
+    return true;
+  }
+  const longWordCount = (text.match(/[A-Za-zА-Яа-яӨөҮүЁё]{3,}/g) || []).length;
+  return longWordCount === 0;
+}
+
+function getSubmissionDisplay(submissionItem) {
+  const patientFields = submissionItem.patientFields || {};
+  const title = submissionItem.title || "";
+  const isNeedsResubmit = submissionItem.status === "needs_resubmit";
+  const organization = !isNeedsResubmit && !hasSuspiciousSubmissionText(patientFields.organizationName, title)
+    ? patientFields.organizationName
+    : "Танигдаагүй байгууллага";
+  const itemInfo = !isNeedsResubmit && !hasSuspiciousSubmissionText(patientFields.itemInfo, title)
+    ? patientFields.itemInfo
+    : "Баримтын текстийг найдвартай таньж чадсангүй.";
+  const amount = isNeedsResubmit ? "" : (patientFields.totalAmount || "");
+  const receiptDate = patientFields.receiptDate || "";
+
+  return {
+    organization,
+    itemInfo,
+    amount: amount || "Дахин илгээх",
+    receiptDate: receiptDate || "Огноо олдсонгүй",
+    isNeedsResubmit: isNeedsResubmit || !amount,
+  };
+}
 
 export default function AdminScreen() {
   const router = useRouter();
@@ -38,6 +82,10 @@ export default function AdminScreen() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [viewMode, setViewMode] = useState("documents");
   const [previewSubmission, setPreviewSubmission] = useState(null);
+  const [previewObjectUrl, setPreviewObjectUrl] = useState("");
+  const [previewContentType, setPreviewContentType] = useState("");
+  const [previewError, setPreviewError] = useState("");
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const fileInputRef = useRef(null);
   const pageSize = 10;
 
@@ -77,6 +125,57 @@ export default function AdminScreen() {
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl = "";
+
+    async function loadPreview() {
+      if (!previewSubmission) {
+        setPreviewObjectUrl("");
+        setPreviewContentType("");
+        setPreviewError("");
+        setIsPreviewLoading(false);
+        return;
+      }
+
+      setPreviewError("");
+      setIsPreviewLoading(true);
+
+      try {
+        const response = await fetchBlob(
+          `/api/admin/submission/file?id=${encodeURIComponent(previewSubmission.id)}`,
+        );
+        objectUrl = URL.createObjectURL(response.blob);
+        if (!active) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setPreviewObjectUrl(objectUrl);
+        setPreviewContentType(response.contentType);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        setPreviewObjectUrl("");
+        setPreviewContentType("");
+        setPreviewError(error.message || "Баримтыг нээж чадсангүй.");
+      } finally {
+        if (active) {
+          setIsPreviewLoading(false);
+        }
+      }
+    }
+
+    void loadPreview();
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [previewSubmission]);
 
   const folderSummaries = useMemo(
     () =>
@@ -128,6 +227,9 @@ export default function AdminScreen() {
         submission.summary,
         submission.patientFields?.patientName,
         submission.patientFields?.registerNumber,
+        submission.patientFields?.organizationName,
+        submission.patientFields?.receiptDate,
+        submission.patientFields?.itemInfo,
       ]
         .filter(Boolean)
         .join(" ")
@@ -442,7 +544,7 @@ export default function AdminScreen() {
               <LogoMark className="mini-badge chat-brand-badge" />
               <div>
                 <p className="chat-brand-overline">Сос Медика Монгол</p>
-                <h2>Админ самбар</h2>
+                <h2>Удирдлагын систем</h2>
               </div>
             </div>
 
@@ -780,13 +882,16 @@ export default function AdminScreen() {
                   <div className="document-list-table">
                     <div className="document-table-head document-table-head-submissions">
                       <span>Хэрэглэгч</span>
+                      <span>Байгууллага</span>
+                      <span>Огноо</span>
                       <span>Бараануудын мэдээлэл</span>
                       <span>Нийт дүн</span>
-                      <span>Илгээсэн</span>
                       <span>Үйлдэл</span>
                     </div>
                     <div className="document-table-body">
-                      {pagedSubmissions.map((submissionItem) => (
+                      {pagedSubmissions.map((submissionItem) => {
+                        const submissionDisplay = getSubmissionDisplay(submissionItem);
+                        return (
                         <article className="document-row submission-row" key={submissionItem.id}>
                           <div className="document-row-main">
                             <strong>{submissionItem.userEmail}</strong>
@@ -796,22 +901,28 @@ export default function AdminScreen() {
                           </div>
 
                           <div className="document-row-main">
-                            <strong>{submissionItem.patientFields?.itemInfo || submissionItem.title}</strong>
+                            <strong>{submissionDisplay.organization}</strong>
                             <p className="document-meta document-row-summary">
-                              {submissionItem.summary || submissionItem.content || "No preview available."}
+                              {submissionItem.title}
+                            </p>
+                          </div>
+
+                          <div className="document-row-date">
+                            <strong>{submissionDisplay.receiptDate}</strong>
+                            <span>{formatTimestamp(submissionItem.createdAt)}</span>
+                          </div>
+
+                          <div className="document-row-main">
+                            <strong>Барааны мөрүүд</strong>
+                            <p className="document-meta document-row-summary document-row-summary-preline">
+                              {submissionDisplay.itemInfo}
                             </p>
                           </div>
 
                           <div className="document-row-status">
                             <strong className="submission-amount">
-                              {submissionItem.patientFields?.totalAmount
-                                || (submissionItem.status === "needs_resubmit" ? "Дахин илгээх" : "-")}
+                              {submissionDisplay.amount}
                             </strong>
-                          </div>
-
-                          <div className="document-row-date">
-                            <strong>{formatTimestamp(submissionItem.createdAt)}</strong>
-                            <span>{submissionItem.patientFields?.visitDate || "Илгээсэн огноо"}</span>
                           </div>
 
                           <div className="document-row-actions">
@@ -835,7 +946,8 @@ export default function AdminScreen() {
                             </button>
                           </div>
                         </article>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
@@ -915,17 +1027,24 @@ export default function AdminScreen() {
               </button>
             </div>
             <div className="preview-modal-body">
-              {String(previewSubmission.title || "").toLowerCase().endsWith(".pdf") ? (
+              {isPreviewLoading ? (
+                <div className="preview-empty-state">Баримтыг ачаалж байна...</div>
+              ) : previewError ? (
+                <div className="preview-empty-state">{previewError}</div>
+              ) : !previewObjectUrl ? (
+                <div className="preview-empty-state">Preview олдсонгүй.</div>
+              ) : String(previewSubmission.title || "").toLowerCase().endsWith(".pdf") || previewContentType.includes("pdf") ? (
                 <iframe
                   className="preview-frame"
-                  src={`/api/admin/submission/file?id=${encodeURIComponent(previewSubmission.id)}`}
+                  src={previewObjectUrl}
                   title={previewSubmission.title}
                 />
               ) : (
                 <img
                   className="preview-image"
-                  src={`/api/admin/submission/file?id=${encodeURIComponent(previewSubmission.id)}`}
+                  src={previewObjectUrl}
                   alt={previewSubmission.title}
+                  onError={() => setPreviewError("Энэ баримтын зураг эвдэрсэн эсвэл browser дээр харуулах боломжгүй байна. Дахин илгээнэ үү.")}
                 />
               )}
             </div>

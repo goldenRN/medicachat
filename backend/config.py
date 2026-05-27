@@ -55,6 +55,28 @@ GEMINI_API_KEY = normalize_api_key(
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 GEMINI_BASE_URL = os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
 GEMINI_TIMEOUT_SECONDS = float(os.environ.get("GEMINI_TIMEOUT_SECONDS", "45") or "45")
+GOOGLE_CLOUD_VISION_API_KEY = normalize_api_key(
+    os.environ.get("GOOGLE_CLOUD_VISION_API_KEY", "") or os.environ.get("GOOGLE_VISION_API_KEY", ""),
+    {"", "your-google-cloud-vision-api-key-here"},
+)
+GOOGLE_TRANSLATE_API_KEY = normalize_api_key(
+    os.environ.get("GOOGLE_TRANSLATE_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", ""),
+    {"", "your-google-translate-api-key-here", "your-google-api-key-here"},
+)
+GOOGLE_CLOUD_VISION_BASE_URL = os.environ.get(
+    "GOOGLE_CLOUD_VISION_BASE_URL",
+    "https://vision.googleapis.com/v1",
+).rstrip("/")
+GOOGLE_CLOUD_VISION_TIMEOUT_SECONDS = float(
+    os.environ.get("GOOGLE_CLOUD_VISION_TIMEOUT_SECONDS", "35") or "35"
+)
+GOOGLE_TRANSLATE_BASE_URL = os.environ.get(
+    "GOOGLE_TRANSLATE_BASE_URL",
+    "https://translation.googleapis.com/language/translate/v2",
+).rstrip("/")
+GOOGLE_TRANSLATE_TIMEOUT_SECONDS = float(
+    os.environ.get("GOOGLE_TRANSLATE_TIMEOUT_SECONDS", "30") or "30"
+)
 SOSMEDICA_SITE_URL = os.environ.get("SOSMEDICA_SITE_URL", "https://sosmedica.mn").rstrip("/")
 
 DEFAULT_PROMPTS = [

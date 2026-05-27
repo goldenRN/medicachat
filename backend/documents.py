@@ -12,10 +12,13 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from .config import DATA_DIR, UPLOAD_DIR
+from .google_vision_service import maybe_extract_google_vision_text
 from .openai_service import maybe_extract_openai_image_text
 from .text_utils import (
     derive_tags,
     extract_name_from_title,
+    extract_patient_fields,
+    format_receipt_ocr_text,
     normalize_whitespace,
     sanitize_filename,
     sanitize_folder_name,
@@ -281,6 +284,68 @@ def parse_uploaded_file(file_payload: dict[str, str], uploader_email: str) -> di
     }
 
 
+def parse_submission_image_file(
+    file_payload: dict[str, str],
+    uploader_email: str,
+) -> dict[str, object] | None:
+    safe_name = sanitize_filename(file_payload.get("name", "uploaded-image"))
+    extension = Path(safe_name).suffix.lower()
+    mime_type = str(file_payload.get("mimeType", "") or "").strip().lower()
+    is_image_upload = mime_type.startswith("image/") or extension in IMAGE_EXTENSIONS
+    if not is_image_upload:
+        return {
+            "document": build_scan_pdf_record(safe_name, uploader_email, "Илгээсэн баримт"),
+            "warning": "Баримт илгээх хэсэгт зөвхөн зураг upload хийнэ үү.",
+        }
+
+    folder_name = "Илгээсэн баримт"
+    folder_path = UPLOAD_DIR / folder_storage_name(folder_name)
+    folder_path.mkdir(parents=True, exist_ok=True)
+    saved_name = f"{int(datetime.now(timezone.utc).timestamp() * 1000)}-{safe_name}"
+    saved_path = folder_path / saved_name
+    relative_storage_path = build_storage_path(folder_name, saved_name)
+    raw_base64 = str(file_payload.get("content", "")).strip()
+    if not raw_base64:
+        return None
+
+    try:
+        saved_path.write_bytes(base64.b64decode(raw_base64, validate=False))
+    except Exception:
+        return {
+            "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
+            "warning": "Баримтын зургийг дахин явуулна уу.",
+        }
+
+    extracted_text, source = extract_best_submission_image_text(saved_path, safe_name)
+
+    if not extracted_text or is_unreadable_ocr_text(extracted_text):
+        return {
+            "document": build_scan_pdf_record(safe_name, uploader_email, folder_name),
+            "warning": "Баримтын зургийг дахин явуулна уу.",
+        }
+
+    extracted_text = format_receipt_ocr_text(safe_name, extracted_text)
+
+    warning = None
+    if source == "google":
+        warning = f'"{safe_name}" зургаас Google Vision OCR ашиглан текст уншлаа.'
+    elif source == "openai":
+        warning = f'"{safe_name}" зургаас OpenAI vision ашиглан текст уншлаа.'
+    else:
+        warning = f'"{safe_name}" зургаас OCR ашиглан текст уншлаа.'
+
+    return {
+        "document": build_document_record(
+            safe_name,
+            uploader_email,
+            extracted_text,
+            folder_name,
+            relative_storage_path,
+        ),
+        "warning": warning,
+    }
+
+
 def recover_uploaded_file(saved_path: Path) -> dict[str, object] | None:
     if not saved_path.exists() or not saved_path.is_file():
         return None
@@ -537,6 +602,34 @@ def extract_image_text_with_tesseract(image_path: Path, language: str) -> str:
                     temp_path.unlink()
             except OSError:
                 pass
+        if should_cleanup:
+            try:
+                if prepared_path.exists():
+                    prepared_path.unlink()
+            except OSError:
+                pass
+
+
+def extract_image_text_with_google_vision(image_path: Path) -> str:
+    prepared_path, mime_type, should_cleanup = prepare_image_for_browser(image_path)
+    try:
+        image_bytes = prepared_path.read_bytes()
+    except Exception:
+        if should_cleanup and prepared_path.exists():
+            try:
+                prepared_path.unlink()
+            except OSError:
+                pass
+        return ""
+
+    try:
+        return maybe_extract_google_vision_text(image_bytes, mime_type) or ""
+    finally:
+        if should_cleanup and prepared_path.exists():
+            try:
+                prepared_path.unlink()
+            except OSError:
+                pass
 
 
 def extract_image_text_with_openai(image_path: Path) -> str:
@@ -564,6 +657,62 @@ def extract_image_text_with_openai(image_path: Path) -> str:
                 prepared_path.unlink()
             except OSError:
                 pass
+
+
+def extract_best_submission_image_text(image_path: Path, title: str) -> tuple[str, str]:
+    candidates: list[tuple[str, str]] = []
+
+    google_text = extract_image_text_with_google_vision(image_path).strip()
+    if google_text:
+        candidates.append((google_text, "google"))
+
+    languages = get_tesseract_languages()
+    ocr_language = "eng+mon" if "mon" in languages else "eng"
+    tesseract_text = extract_image_text_with_tesseract(image_path, ocr_language).strip()
+    if tesseract_text:
+        candidates.append((tesseract_text, "tesseract"))
+
+    best_text = ""
+    best_source = ""
+    best_score = -999.0
+
+    for candidate_text, source in candidates:
+        score = score_submission_image_text(title, candidate_text)
+        if score > best_score:
+            best_text = candidate_text
+            best_source = source
+            best_score = score
+
+    if best_score < 12.0:
+        openai_text = extract_image_text_with_openai(image_path).strip()
+        if openai_text:
+            openai_score = score_submission_image_text(title, openai_text)
+            if openai_score > best_score:
+                best_text = openai_text
+                best_source = "openai"
+                best_score = openai_score
+
+    return best_text, best_source
+
+
+def score_submission_image_text(title: str, text: str) -> float:
+    base_score = score_ocr_text(text)
+    fields = extract_patient_fields(title, text)
+    receipt_bonus = 0.0
+
+    if fields.get("organizationName"):
+        receipt_bonus += 2.5
+    if fields.get("receiptDate"):
+        receipt_bonus += 2.0
+    if fields.get("itemInfo"):
+        receipt_bonus += 3.0
+    if fields.get("totalAmount"):
+        receipt_bonus += 4.0
+
+    if looks_like_base64_text(text):
+        receipt_bonus -= 10.0
+
+    return base_score + receipt_bonus
 
 
 def run_tesseract(image_path: Path, language: str, psm: str) -> str:
@@ -688,6 +837,33 @@ def prepare_image_for_browser(image_path: Path) -> tuple[Path, str, bool]:
     return image_path, content_type, False
 
 
+def is_valid_browser_image(image_path: Path) -> bool:
+    if not image_path.exists() or not image_path.is_file():
+        return False
+
+    try:
+        header = image_path.read_bytes()[:64]
+    except OSError:
+        return False
+
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if header.startswith(b"\xff\xd8\xff"):
+        return True
+    if header.startswith((b"GIF87a", b"GIF89a")):
+        return True
+    if header.startswith(b"BM"):
+        return True
+    if header[:4] in {b"II*\x00", b"MM\x00*"}:
+        return True
+    if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return True
+    if b"ftypheic" in header or b"ftypheif" in header or b"ftypmif1" in header:
+        return True
+
+    return False
+
+
 def prepare_image_for_ocr_quality(image_path: Path) -> Path | None:
     if not image_path.exists():
         return None
@@ -794,13 +970,10 @@ def recover_submission_file(
         except Exception:
             pass
 
-        languages = get_tesseract_languages()
-        ocr_language = "eng+mon" if "mon" in languages else "eng"
-        extracted_text = extract_image_text_with_tesseract(saved_path, ocr_language).strip()
-        if not extracted_text or is_unreadable_ocr_text(extracted_text):
-            extracted_text = extract_image_text_with_openai(saved_path).strip()
+        extracted_text, _source = extract_best_submission_image_text(saved_path, title)
         if not extracted_text or is_unreadable_ocr_text(extracted_text):
             return build_scan_pdf_record(title, uploader_email, folder_name)
+        extracted_text = format_receipt_ocr_text(title, extracted_text)
         return build_document_record(title, uploader_email, extracted_text, folder_name, build_storage_reference(saved_path))
 
     try:

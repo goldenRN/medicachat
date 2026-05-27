@@ -10,7 +10,6 @@ import {
   clearStoredToken,
   formatTimestamp,
   getExtension,
-  getStoredToken,
   initialsFromEmail,
   optimizeImageForUpload,
 } from "@/lib/session";
@@ -28,6 +27,21 @@ const EMPTY_STATE = {
   activeHistoryId: null,
   messages: [],
 };
+
+const TRANSLATE_LANGUAGES = [
+  { value: "auto", label: "Автоматаар таних" },
+  { value: "mn", label: "Монгол" },
+  { value: "en", label: "English" },
+  { value: "ko", label: "Korean" },
+  { value: "ja", label: "Japanese" },
+  { value: "zh-CN", label: "Chinese (Simplified)" },
+  { value: "zh-TW", label: "Chinese (Traditional)" },
+  { value: "ru", label: "Russian" },
+  { value: "de", label: "German" },
+  { value: "fr", label: "French" },
+  { value: "es", label: "Spanish" },
+  { value: "tr", label: "Turkish" },
+];
 
 function renderInlineMarkup(text, keyPrefix) {
   const nodes = [];
@@ -184,6 +198,13 @@ export default function ChatScreen() {
   const [pendingMessage, setPendingMessage] = useState(null);
   const [notice, setNotice] = useState({ text: "", tone: "" });
   const [message, setMessage] = useState("");
+  const [translateModalOpen, setTranslateModalOpen] = useState(false);
+  const [translateSourceLanguage, setTranslateSourceLanguage] = useState("auto");
+  const [translateTargetLanguage, setTranslateTargetLanguage] = useState("en");
+  const [translateDraft, setTranslateDraft] = useState("");
+  const [translateResult, setTranslateResult] = useState("");
+  const [detectedTranslateLanguage, setDetectedTranslateLanguage] = useState("");
+  const [isTranslating, setIsTranslating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeHistoryMenuId, setActiveHistoryMenuId] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -197,11 +218,6 @@ export default function ChatScreen() {
   const submissionInputRef = useRef(null);
 
   useEffect(() => {
-    if (!getStoredToken()) {
-      router.replace("/login");
-      return;
-    }
-
     void loadBootstrapData();
   }, [router]);
 
@@ -289,9 +305,11 @@ export default function ChatScreen() {
       }
 
       setNotice({ text: "", tone: "" });
-    } catch {
-      clearStoredToken();
-      router.replace("/login");
+    } catch (error) {
+      setNotice({
+        text: error.message || "Чат ачаалах үед алдаа гарлаа.",
+        tone: "error",
+      });
     }
   }
 
@@ -330,7 +348,7 @@ export default function ChatScreen() {
     }
 
     clearStoredToken();
-    router.replace("/login");
+    router.replace("/chat");
   }
 
   function handleNewChat() {
@@ -492,6 +510,86 @@ export default function ChatScreen() {
     }
   }
 
+  function handleOpenTranslateModal() {
+    setTranslateDraft(message);
+    setTranslateResult("");
+    setDetectedTranslateLanguage("");
+    setTranslateModalOpen(true);
+  }
+
+  function handleTranslateDraftChange(value) {
+    setTranslateDraft(value);
+    setTranslateResult("");
+    setDetectedTranslateLanguage("");
+  }
+
+  function handleTranslateLanguageChange(kind, nextValue) {
+    if (kind === "source") {
+      setTranslateSourceLanguage(nextValue);
+    } else {
+      setTranslateTargetLanguage(nextValue);
+    }
+    setTranslateResult("");
+    setDetectedTranslateLanguage("");
+  }
+
+  async function handleTranslateSubmit() {
+    const text = translateDraft.trim();
+    if (!text) {
+      setNotice({
+        text: "Орчуулах текстээ оруулна уу.",
+        tone: "error",
+      });
+      return;
+    }
+
+    if (translateSourceLanguage !== "auto" && translateSourceLanguage === translateTargetLanguage) {
+      setNotice({
+        text: "Эх хэл болон орчуулах хэл ижил байна.",
+        tone: "error",
+      });
+      return;
+    }
+
+    setIsTranslating(true);
+    setNotice({ text: "", tone: "" });
+
+    try {
+      const response = await fetchJson("/api/translate", {
+        method: "POST",
+        body: {
+          text,
+          sourceLanguage: translateSourceLanguage,
+          targetLanguage: translateTargetLanguage,
+        },
+      });
+      setTranslateResult(response.translatedText || "");
+      setDetectedTranslateLanguage(response.detectedSourceLanguage || "");
+    } catch (translateError) {
+      setNotice({
+        text: translateError.message || "Орчуулга хийх үед алдаа гарлаа.",
+        tone: "error",
+      });
+    } finally {
+      setIsTranslating(false);
+    }
+  }
+
+  function handleApplyTranslation() {
+    if (!translateResult.trim()) {
+      return;
+    }
+    setMessage(translateResult);
+    setTranslateModalOpen(false);
+    setNotice({
+      text: "Орчуулсан текст input хэсэгт орлоо.",
+      tone: "success",
+    });
+    window.requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
+  }
+
   async function handleComposerUpload(event) {
     const files = Array.from(event.target.files || []);
     if (!files.length) {
@@ -569,39 +667,31 @@ export default function ChatScreen() {
       return;
     }
 
+    const invalidFiles = files.filter((file) => {
+      const extension = getExtension(file.name);
+      return !(file.type.startsWith("image/") || IMAGE_EXTENSIONS.includes(extension));
+    });
+    if (invalidFiles.length) {
+      setNotice({
+        text: "Баримт илгээх хэсэгт зөвхөн зураг upload хийнэ үү.",
+        tone: "error",
+      });
+      event.target.value = "";
+      return;
+    }
+
     setIsSubmittingDocument(true);
     setNotice({ text: "", tone: "" });
 
     try {
       const payloadFiles = await Promise.all(
         files.map(async (file) => {
-          const extension = getExtension(file.name);
-          if (
-            file.type.startsWith("image/") ||
-            BINARY_UPLOAD_EXTENSIONS.includes(extension) ||
-            IMAGE_EXTENSIONS.includes(extension)
-          ) {
-            const optimized =
-              file.type.startsWith("image/")
-                ? await optimizeImageForUpload(file)
-                : {
-                    fileName: file.name,
-                    mimeType: file.type,
-                    bytes: new Uint8Array(await file.arrayBuffer()),
-                  };
-            return {
-              name: optimized.fileName,
-              encoding: "base64",
-              content: bytesToBase64(optimized.bytes),
-              mimeType: optimized.mimeType,
-            };
-          }
-
+          const optimized = await optimizeImageForUpload(file);
           return {
-            name: file.name,
-            encoding: "utf8",
-            content: await file.text(),
-            mimeType: file.type,
+            name: optimized.fileName,
+            encoding: "base64",
+            content: bytesToBase64(optimized.bytes),
+            mimeType: optimized.mimeType,
           };
         }),
       );
@@ -701,7 +791,7 @@ export default function ChatScreen() {
                 ref={submissionInputRef}
                 id="submission-file-input"
                 type="file"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,image/*,.txt,.md,.json,.csv"
+                accept="image/*,.heic,.heif"
                 multiple
                 hidden
                 onChange={handleSubmissionUpload}
@@ -715,7 +805,7 @@ export default function ChatScreen() {
                 <span className="new-chat-rail-icon">
                   <UploadIcon />
                 </span>
-                <span>{isSubmittingDocument ? "Баримт илгээж байна..." : "Баримт илгээх"}</span>
+                <span>{isSubmittingDocument ? "Зураг илгээж байна..." : "Баримтын зураг илгээх"}</span>
               </button>
             </div>
 
@@ -802,7 +892,7 @@ export default function ChatScreen() {
                 <span className="chat-user-avatar">
                   {initialsFromEmail(appState.user?.email)}
                 </span>
-                <span className="chat-user-name">{appState.user?.name || "Хэрэглэгч"}</span>
+                <span className="chat-user-name">{appState.user?.name || "Зочин"}</span>
                 <ChevronUpDownIcon />
               </button>
 
@@ -821,10 +911,24 @@ export default function ChatScreen() {
                       <span>Admin panel</span>
                     </button>
                   ) : null}
-                  <button className="popup-menu-item danger" type="button" onClick={handleLogout}>
-                    <LogoutIcon />
-                    <span>Logout</span>
-                  </button>
+                  {appState.user?.role === "admin" ? (
+                    <button className="popup-menu-item danger" type="button" onClick={handleLogout}>
+                      <LogoutIcon />
+                      <span>Logout</span>
+                    </button>
+                  ) : (
+                    <button
+                      className="popup-menu-item"
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        router.push("/login");
+                      }}
+                    >
+                      <GridIcon />
+                      <span>Админ нэвтрэх</span>
+                    </button>
+                  )}
                 </div>
               ) : null}
             </div>
@@ -864,15 +968,6 @@ export default function ChatScreen() {
                       <div className="bubble user-chat-bubble">
                         {renderStructuredMessage(entry.text)}
                       </div>
-                      {entry.role === "bot" && Array.isArray(entry.citations) && entry.citations.length ? (
-                        <div className="citations user-chat-citations">
-                          {entry.citations.map((citation, citationIndex) => (
-                            <span className="citation" key={`${citation.title}-${citationIndex}`}>
-                              {citation.title}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
                       <div className="message-meta">{formatTimestamp(entry.timestamp)}</div>
                     </div>
                   </div>
@@ -951,7 +1046,12 @@ export default function ChatScreen() {
                     >
                       <PlusIcon />
                     </button>
-                    <button className="composer-tool" type="button" aria-label="Translate">
+                    <button
+                      className="composer-tool"
+                      type="button"
+                      aria-label="Translate"
+                      onClick={handleOpenTranslateModal}
+                    >
                       <TranslateIcon />
                       <span>Translate</span>
                     </button>
@@ -997,6 +1097,110 @@ export default function ChatScreen() {
                 </button>
                 <button className="primary-button" type="button" onClick={() => void submitHistoryRename()}>
                   Хадгалах
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {translateModalOpen ? (
+          <div className="rename-modal-backdrop" role="presentation" onClick={() => !isTranslating && setTranslateModalOpen(false)}>
+            <div
+              className="rename-modal translate-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="translate-modal-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="rename-modal-head">
+                <h3 id="translate-modal-title">Text Translate</h3>
+                <p>Google Translate ашиглан текстээ хэл сонгоод орчуулна.</p>
+              </div>
+
+              <div className="translate-language-grid">
+                <label className="field">
+                  <span>Эх хэл</span>
+                  <select
+                    className="field-select field-select-compact"
+                    value={translateSourceLanguage}
+                    onChange={(event) => handleTranslateLanguageChange("source", event.target.value)}
+                  >
+                    {TRANSLATE_LANGUAGES.map((language) => (
+                      <option key={language.value} value={language.value}>
+                        {language.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>Орчуулах хэл</span>
+                  <select
+                    className="field-select field-select-compact"
+                    value={translateTargetLanguage}
+                    onChange={(event) => handleTranslateLanguageChange("target", event.target.value)}
+                  >
+                    {TRANSLATE_LANGUAGES.filter((language) => language.value !== "auto").map((language) => (
+                      <option key={language.value} value={language.value}>
+                        {language.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="field">
+                <span>Орчуулах текст</span>
+                <textarea
+                  className="translate-modal-textarea"
+                  value={translateDraft}
+                  onChange={(event) => handleTranslateDraftChange(event.target.value)}
+                  placeholder="Энд текстээ бичнэ үү."
+                />
+              </label>
+
+              <div className="translate-actions-row">
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => void handleTranslateSubmit()}
+                  disabled={isTranslating || !translateDraft.trim()}
+                >
+                  {isTranslating ? "Орчуулж байна..." : "Орчуулах"}
+                </button>
+                {detectedTranslateLanguage ? (
+                  <p className="translate-meta">
+                    Танигдсан хэл: {getLanguageLabel(detectedTranslateLanguage)}
+                  </p>
+                ) : null}
+              </div>
+
+              <label className="field">
+                <span>Орчуулсан текст</span>
+                <textarea
+                  className="translate-modal-textarea translate-modal-result"
+                  value={translateResult}
+                  readOnly
+                  placeholder="Орчуулгын үр дүн энд гарна."
+                />
+              </label>
+
+              <div className="rename-modal-actions">
+                <button
+                  className="ghost-button"
+                  type="button"
+                  onClick={() => setTranslateModalOpen(false)}
+                  disabled={isTranslating}
+                >
+                  Болих
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={handleApplyTranslation}
+                  disabled={!translateResult.trim()}
+                >
+                  Text input-д оруулах
                 </button>
               </div>
             </div>
@@ -1152,6 +1356,10 @@ function CloseIcon() {
 function fileTypeLabel(filename) {
   const extension = getExtension(filename).replace(".", "").toUpperCase();
   return extension || "FILE";
+}
+
+function getLanguageLabel(languageCode) {
+  return TRANSLATE_LANGUAGES.find((language) => language.value === languageCode)?.label || languageCode;
 }
 
 function ChatBubbleIcon() {

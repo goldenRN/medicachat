@@ -29,6 +29,8 @@ from .text_utils import (
     build_history_title,
     build_text_chunks,
     extract_patient_fields,
+    has_suspicious_receipt_fields,
+    looks_like_receipt_text,
     parse_json,
     summarize_content,
     utc_now,
@@ -468,6 +470,24 @@ def insert_users(users: list[dict[str, Any]]) -> None:
         )
 
 
+def ensure_guest_user(user_id: str, email: str = "guest@sosmedica.mn", name: str = "Зочин") -> None:
+    normalized_user_id = str(user_id or "").strip()
+    if not normalized_user_id:
+        return
+
+    insert_users(
+        [
+            {
+                "id": normalized_user_id,
+                "email": normalize_login_email(email) or "guest@sosmedica.mn",
+                "password": "__guest__",
+                "role": "guest",
+                "name": str(name or "Зочин").strip() or "Зочин",
+            }
+        ]
+    )
+
+
 def insert_documents(documents: list[dict[str, Any]]) -> None:
     with db_connect() as conn:
         prepared_documents: list[dict[str, Any]] = []
@@ -649,6 +669,15 @@ def create_document_submission(
     status: str,
 ) -> dict[str, Any]:
     patient_fields = extract_patient_fields(document["title"], document["content"])
+    if (
+        status != "needs_resubmit"
+        and (
+            not looks_like_receipt_text(str(document.get("content", "") or ""))
+            or has_suspicious_receipt_fields(patient_fields, str(document.get("title", "") or ""))
+        )
+    ):
+        status = "needs_resubmit"
+
     submission = {
         "id": str(uuid4()),
         "userId": user_id,
@@ -707,11 +736,16 @@ def repair_submission_uploads() -> None:
             summary = str(row["summary"] or "")
             content = str(row["content"] or "")
             patient_fields = parse_json(row["patient_fields_json"], {})
+            combined_text = f"{summary}\n{content}".strip()
             needs_repair = (
                 summary.startswith("AAAA")
                 or content.startswith("AAAA")
                 or not patient_fields.get("totalAmount")
                 or not patient_fields.get("itemInfo")
+                or not patient_fields.get("organizationName")
+                or not patient_fields.get("receiptDate")
+                or not looks_like_receipt_text(combined_text)
+                or has_suspicious_receipt_fields(patient_fields, title)
             )
             if not needs_repair:
                 continue
@@ -733,10 +767,17 @@ def repair_submission_uploads() -> None:
                 str(recovered.get("title", title)),
                 str(recovered.get("content", "")),
             )
+            refreshed_patient_fields = {
+                **patient_fields,
+                **refreshed_patient_fields,
+            }
+            refreshed_combined_text = f"{recovered.get('summary', '')}\n{recovered.get('content', '')}".strip()
             refreshed_status = (
                 "needs_resubmit"
                 if "ocr шаардлагатай" in str(recovered.get("summary", "")).lower()
                 or "embedded text was not found" in str(recovered.get("content", "")).lower()
+                or not looks_like_receipt_text(refreshed_combined_text)
+                or has_suspicious_receipt_fields(refreshed_patient_fields, title)
                 else "processed"
             )
             conn.execute(
@@ -1284,6 +1325,7 @@ def row_to_submission(row: sqlite3.Row) -> dict[str, Any]:
     summary = str(row["summary"] or "")
     content = str(row["content"] or "")
     patient_fields = parse_json(row["patient_fields_json"], {})
+    status = str(row["status"] or "")
 
     if looks_like_base64_text(summary) or looks_like_base64_text(content):
         summary = "Баримтын зургийг уншиж чадсангүй. Дахин илгээж шалгана уу."
@@ -1293,11 +1335,33 @@ def row_to_submission(row: sqlite3.Row) -> dict[str, Any]:
             "itemInfo": patient_fields.get("itemInfo") or str(row["title"] or ""),
         }
 
-    if not patient_fields.get("totalAmount") or not patient_fields.get("itemInfo"):
+    if (
+        not patient_fields.get("totalAmount")
+        or not patient_fields.get("itemInfo")
+        or not patient_fields.get("organizationName")
+        or not patient_fields.get("receiptDate")
+        or has_suspicious_receipt_fields(patient_fields, str(row["title"] or ""))
+    ):
         derived_fields = extract_patient_fields(str(row["title"] or ""), f"{summary}\n{content}")
         patient_fields = {
-            **derived_fields,
             **patient_fields,
+            **derived_fields,
+        }
+        if has_suspicious_receipt_fields(patient_fields, str(row["title"] or "")) or not looks_like_receipt_text(f"{summary}\n{content}"):
+            status = "needs_resubmit"
+            patient_fields = {
+                **patient_fields,
+                "organizationName": "Танигдаагүй байгууллага",
+                "itemInfo": "Баримтын текстийг найдвартай таньж чадсангүй.",
+                "totalAmount": "",
+            }
+
+    if status == "needs_resubmit":
+        patient_fields = {
+            **patient_fields,
+            "organizationName": "Танигдаагүй байгууллага",
+            "itemInfo": "Баримтын текстийг найдвартай таньж чадсангүй.",
+            "totalAmount": "",
         }
 
     return {
@@ -1306,7 +1370,7 @@ def row_to_submission(row: sqlite3.Row) -> dict[str, Any]:
         "userEmail": row["user_email"],
         "title": row["title"],
         "storagePath": row["storage_path"] or "",
-        "status": row["status"],
+        "status": status,
         "summary": summary,
         "content": content,
         "tags": parse_json(row["tags_json"], []),
