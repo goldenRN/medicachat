@@ -80,6 +80,11 @@ EMPLOYEE_QUERY_STOPWORDS = {
     "вэ",
     "эмнэлгийн",
     "emnelgiin",
+    "sos",
+    "medica",
+    "medika",
+    "coc",
+    "mongolia",
 }
 
 EMPLOYEE_CATEGORY_HINTS = {
@@ -450,7 +455,7 @@ def extract_employee_query_tokens(question: str) -> list[str]:
         for token in tokens
         if token
         and token not in EMPLOYEE_QUERY_STOPWORDS
-        and not token.startswith(("ajilch", "ajilt", "medeelel", "jagsaalt", "bugd", "heden", "niit", "khun", "ajillad", "emneleg", "manai", "baid", "amdard"))
+        and not token.startswith(("ajilch", "ajilt", "medeelel", "jagsaalt", "bugd", "heden", "niit", "khun", "ajillad", "emneleg", "manai", "baid", "amdard", "medik", "medic", "mongol"))
     ]
     return list(dict.fromkeys(filtered))
 
