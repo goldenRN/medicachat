@@ -40,6 +40,25 @@ from .text_utils import (
 DB_LOCK = RLock()
 DOCUMENT_LIST_CACHE: list[dict[str, Any]] | None = None
 
+EMPLOYEE_CATEGORY_LABELS = {
+    "clinic_management_admin": {
+        "mn": "Clinic удирдлага, захиргааны ажилчид",
+        "en": "Clinic Management and Administration",
+    },
+    "clinic_medical": {
+        "mn": "Clinic эмнэлгийн чиг үүргийн ажилчид",
+        "en": "Clinic Medical Function",
+    },
+    "ot_staff": {
+        "mn": "OT Staff / Оюу Толгойн staff",
+        "en": "OT Staff",
+    },
+    "clinic_other": {
+        "mn": "Clinic бусад чиг үүргийн ажилчид",
+        "en": "Clinic Other Function",
+    },
+}
+
 
 def normalize_login_email(value: str) -> str:
     return str(value or "").strip().lower()
@@ -68,12 +87,18 @@ def db_connect():
             connection.close()
 
 
-def ensure_bootstrap() -> None:
+def ensure_bootstrap(run_maintenance: bool = True) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     initialize_database()
     migrate_legacy_json_if_needed()
     seed_defaults_if_needed()
+    if run_maintenance:
+        sync_orphaned_uploads()
+        repair_submission_uploads()
+
+
+def run_bootstrap_maintenance() -> None:
     sync_orphaned_uploads()
     repair_submission_uploads()
 
@@ -197,6 +222,36 @@ def initialize_database() -> None:
               FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS employees (
+              id TEXT PRIMARY KEY,
+              category_key TEXT NOT NULL,
+              category_name_mn TEXT NOT NULL,
+              category_name_en TEXT NOT NULL,
+              source_sheet TEXT NOT NULL DEFAULT '',
+              employee_number TEXT NOT NULL DEFAULT '',
+              sort_order INTEGER NOT NULL DEFAULT 0,
+              last_name_en TEXT NOT NULL DEFAULT '',
+              first_name_en TEXT NOT NULL DEFAULT '',
+              last_name_mn TEXT NOT NULL DEFAULT '',
+              first_name_mn TEXT NOT NULL DEFAULT '',
+              position_en TEXT NOT NULL DEFAULT '',
+              position_mn TEXT NOT NULL DEFAULT '',
+              register_number TEXT NOT NULL DEFAULT '',
+              email_primary TEXT NOT NULL DEFAULT '',
+              email_secondary TEXT NOT NULL DEFAULT '',
+              phone_primary TEXT NOT NULL DEFAULT '',
+              phone_secondary TEXT NOT NULL DEFAULT '',
+              duty_phone TEXT NOT NULL DEFAULT '',
+              date_of_birth TEXT NOT NULL DEFAULT '',
+              hire_date TEXT NOT NULL DEFAULT '',
+              home_address TEXT NOT NULL DEFAULT '',
+              notes TEXT NOT NULL DEFAULT '',
+              extra_info TEXT NOT NULL DEFAULT '',
+              photo_storage_path TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_histories_user_updated
               ON histories(user_id, updated_at DESC);
 
@@ -211,6 +266,9 @@ def initialize_database() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_document_submissions_user_created
               ON document_submissions(user_id, created_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_employees_category_sort
+              ON employees(category_key, sort_order ASC, updated_at DESC);
             """
         )
         ensure_document_folder_column(conn)
@@ -450,6 +508,20 @@ def count_rows(table_name: str) -> int:
         return int(conn.execute(f"SELECT COUNT(*) AS count FROM {table_name}").fetchone()["count"])
 
 
+def get_employee_category_meta(category_key: str) -> dict[str, str]:
+    return EMPLOYEE_CATEGORY_LABELS.get(
+        str(category_key or "").strip(),
+        {
+            "mn": "Ажилчид",
+            "en": "Employees",
+        },
+    )
+
+
+def normalize_employee_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
 def insert_users(users: list[dict[str, Any]]) -> None:
     with db_connect() as conn:
         conn.executemany(
@@ -486,6 +558,242 @@ def ensure_guest_user(user_id: str, email: str = "guest@sosmedica.mn", name: str
             }
         ]
     )
+
+
+def row_to_employee(row: sqlite3.Row) -> dict[str, Any]:
+    category_key = normalize_employee_text(row["category_key"])
+    return {
+        "id": row["id"],
+        "categoryKey": category_key,
+        "categoryNameMn": normalize_employee_text(row["category_name_mn"]) or get_employee_category_meta(category_key)["mn"],
+        "categoryNameEn": normalize_employee_text(row["category_name_en"]) or get_employee_category_meta(category_key)["en"],
+        "sourceSheet": normalize_employee_text(row["source_sheet"]),
+        "employeeNumber": normalize_employee_text(row["employee_number"]),
+        "sortOrder": int(row["sort_order"] or 0),
+        "lastNameEn": normalize_employee_text(row["last_name_en"]),
+        "firstNameEn": normalize_employee_text(row["first_name_en"]),
+        "lastNameMn": normalize_employee_text(row["last_name_mn"]),
+        "firstNameMn": normalize_employee_text(row["first_name_mn"]),
+        "positionEn": normalize_employee_text(row["position_en"]),
+        "positionMn": normalize_employee_text(row["position_mn"]),
+        "registerNumber": normalize_employee_text(row["register_number"]),
+        "emailPrimary": normalize_employee_text(row["email_primary"]),
+        "emailSecondary": normalize_employee_text(row["email_secondary"]),
+        "phonePrimary": normalize_employee_text(row["phone_primary"]),
+        "phoneSecondary": normalize_employee_text(row["phone_secondary"]),
+        "dutyPhone": normalize_employee_text(row["duty_phone"]),
+        "dateOfBirth": normalize_employee_text(row["date_of_birth"]),
+        "hireDate": normalize_employee_text(row["hire_date"]),
+        "homeAddress": normalize_employee_text(row["home_address"]),
+        "notes": normalize_employee_text(row["notes"]),
+        "extraInfo": normalize_employee_text(row["extra_info"]),
+        "photoStoragePath": normalize_employee_text(row["photo_storage_path"]),
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
+def list_employees() -> list[dict[str, Any]]:
+    with db_connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, category_key, category_name_mn, category_name_en, source_sheet,
+                   employee_number, sort_order, last_name_en, first_name_en, last_name_mn, first_name_mn,
+                   position_en, position_mn, register_number, email_primary, email_secondary,
+                   phone_primary, phone_secondary, duty_phone, date_of_birth, hire_date,
+                   home_address, notes, extra_info, photo_storage_path, created_at, updated_at
+            FROM employees
+            ORDER BY category_key COLLATE NOCASE ASC, sort_order ASC, updated_at DESC
+            """
+        ).fetchall()
+    return [row_to_employee(row) for row in rows]
+
+
+def get_employee_by_id(employee_id: str) -> dict[str, Any] | None:
+    with db_connect() as conn:
+        row = conn.execute(
+            """
+            SELECT id, category_key, category_name_mn, category_name_en, source_sheet,
+                   employee_number, sort_order, last_name_en, first_name_en, last_name_mn, first_name_mn,
+                   position_en, position_mn, register_number, email_primary, email_secondary,
+                   phone_primary, phone_secondary, duty_phone, date_of_birth, hire_date,
+                   home_address, notes, extra_info, photo_storage_path, created_at, updated_at
+            FROM employees
+            WHERE id = ?
+            """,
+            (employee_id,),
+        ).fetchone()
+    return row_to_employee(row) if row else None
+
+
+def get_next_employee_sort_order(conn: sqlite3.Connection, category_key: str) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM employees WHERE category_key = ?",
+        (category_key,),
+    ).fetchone()
+    return int(row["max_sort"] or 0) + 1
+
+
+def save_employee_record(employee: dict[str, Any], employee_id: str | None = None) -> dict[str, Any]:
+    now = utc_now()
+    category_key = normalize_employee_text(employee.get("categoryKey")) or "clinic_other"
+    category_meta = get_employee_category_meta(category_key)
+    current_id = employee_id or normalize_employee_text(employee.get("id"))
+    existing = get_employee_by_id(current_id) if current_id else None
+    created_at = existing["createdAt"] if existing else now
+    normalized_id = current_id or str(uuid4())
+
+    with db_connect() as conn:
+        sort_order = employee.get("sortOrder")
+        if sort_order in {None, ""}:
+            sort_order = existing["sortOrder"] if existing else get_next_employee_sort_order(conn, category_key)
+
+        payload = {
+            "id": normalized_id,
+            "category_key": category_key,
+            "category_name_mn": normalize_employee_text(employee.get("categoryNameMn")) or category_meta["mn"],
+            "category_name_en": normalize_employee_text(employee.get("categoryNameEn")) or category_meta["en"],
+            "source_sheet": normalize_employee_text(employee.get("sourceSheet")),
+            "employee_number": normalize_employee_text(employee.get("employeeNumber")),
+            "sort_order": int(sort_order or 0),
+            "last_name_en": normalize_employee_text(employee.get("lastNameEn")),
+            "first_name_en": normalize_employee_text(employee.get("firstNameEn")),
+            "last_name_mn": normalize_employee_text(employee.get("lastNameMn")),
+            "first_name_mn": normalize_employee_text(employee.get("firstNameMn")),
+            "position_en": normalize_employee_text(employee.get("positionEn")),
+            "position_mn": normalize_employee_text(employee.get("positionMn")),
+            "register_number": normalize_employee_text(employee.get("registerNumber")),
+            "email_primary": normalize_employee_text(employee.get("emailPrimary")),
+            "email_secondary": normalize_employee_text(employee.get("emailSecondary")),
+            "phone_primary": normalize_employee_text(employee.get("phonePrimary")),
+            "phone_secondary": normalize_employee_text(employee.get("phoneSecondary")),
+            "duty_phone": normalize_employee_text(employee.get("dutyPhone")),
+            "date_of_birth": normalize_employee_text(employee.get("dateOfBirth")),
+            "hire_date": normalize_employee_text(employee.get("hireDate")),
+            "home_address": normalize_employee_text(employee.get("homeAddress")),
+            "notes": normalize_employee_text(employee.get("notes")),
+            "extra_info": normalize_employee_text(employee.get("extraInfo")),
+            "photo_storage_path": normalize_employee_text(employee.get("photoStoragePath")),
+            "created_at": created_at,
+            "updated_at": now,
+        }
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO employees (
+              id, category_key, category_name_mn, category_name_en, source_sheet,
+              employee_number, sort_order, last_name_en, first_name_en, last_name_mn, first_name_mn,
+              position_en, position_mn, register_number, email_primary, email_secondary,
+              phone_primary, phone_secondary, duty_phone, date_of_birth, hire_date,
+              home_address, notes, extra_info, photo_storage_path, created_at, updated_at
+            )
+            VALUES (
+              :id, :category_key, :category_name_mn, :category_name_en, :source_sheet,
+              :employee_number, :sort_order, :last_name_en, :first_name_en, :last_name_mn, :first_name_mn,
+              :position_en, :position_mn, :register_number, :email_primary, :email_secondary,
+              :phone_primary, :phone_secondary, :duty_phone, :date_of_birth, :hire_date,
+              :home_address, :notes, :extra_info, :photo_storage_path, :created_at, :updated_at
+            )
+            """,
+            payload,
+        )
+    return get_employee_by_id(normalized_id) or {
+        "id": normalized_id,
+        "categoryKey": category_key,
+        "categoryNameMn": payload["category_name_mn"],
+        "categoryNameEn": payload["category_name_en"],
+        "sourceSheet": payload["source_sheet"],
+        "employeeNumber": payload["employee_number"],
+        "sortOrder": payload["sort_order"],
+        "lastNameEn": payload["last_name_en"],
+        "firstNameEn": payload["first_name_en"],
+        "lastNameMn": payload["last_name_mn"],
+        "firstNameMn": payload["first_name_mn"],
+        "positionEn": payload["position_en"],
+        "positionMn": payload["position_mn"],
+        "registerNumber": payload["register_number"],
+        "emailPrimary": payload["email_primary"],
+        "emailSecondary": payload["email_secondary"],
+        "phonePrimary": payload["phone_primary"],
+        "phoneSecondary": payload["phone_secondary"],
+        "dutyPhone": payload["duty_phone"],
+        "dateOfBirth": payload["date_of_birth"],
+        "hireDate": payload["hire_date"],
+        "homeAddress": payload["home_address"],
+        "notes": payload["notes"],
+        "extraInfo": payload["extra_info"],
+        "photoStoragePath": payload["photo_storage_path"],
+        "createdAt": payload["created_at"],
+        "updatedAt": payload["updated_at"],
+    }
+
+
+def replace_all_employees(employees: list[dict[str, Any]]) -> None:
+    with db_connect() as conn:
+        conn.execute("DELETE FROM employees")
+        for employee in employees:
+            category_key = normalize_employee_text(employee.get("categoryKey")) or "clinic_other"
+            category_meta = get_employee_category_meta(category_key)
+            conn.execute(
+                """
+                INSERT INTO employees (
+                  id, category_key, category_name_mn, category_name_en, source_sheet,
+                  employee_number, sort_order, last_name_en, first_name_en, last_name_mn, first_name_mn,
+                  position_en, position_mn, register_number, email_primary, email_secondary,
+                  phone_primary, phone_secondary, duty_phone, date_of_birth, hire_date,
+                  home_address, notes, extra_info, photo_storage_path, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    normalize_employee_text(employee.get("id")) or str(uuid4()),
+                    category_key,
+                    normalize_employee_text(employee.get("categoryNameMn")) or category_meta["mn"],
+                    normalize_employee_text(employee.get("categoryNameEn")) or category_meta["en"],
+                    normalize_employee_text(employee.get("sourceSheet")),
+                    normalize_employee_text(employee.get("employeeNumber")),
+                    int(employee.get("sortOrder") or 0),
+                    normalize_employee_text(employee.get("lastNameEn")),
+                    normalize_employee_text(employee.get("firstNameEn")),
+                    normalize_employee_text(employee.get("lastNameMn")),
+                    normalize_employee_text(employee.get("firstNameMn")),
+                    normalize_employee_text(employee.get("positionEn")),
+                    normalize_employee_text(employee.get("positionMn")),
+                    normalize_employee_text(employee.get("registerNumber")),
+                    normalize_employee_text(employee.get("emailPrimary")),
+                    normalize_employee_text(employee.get("emailSecondary")),
+                    normalize_employee_text(employee.get("phonePrimary")),
+                    normalize_employee_text(employee.get("phoneSecondary")),
+                    normalize_employee_text(employee.get("dutyPhone")),
+                    normalize_employee_text(employee.get("dateOfBirth")),
+                    normalize_employee_text(employee.get("hireDate")),
+                    normalize_employee_text(employee.get("homeAddress")),
+                    normalize_employee_text(employee.get("notes")),
+                    normalize_employee_text(employee.get("extraInfo")),
+                    normalize_employee_text(employee.get("photoStoragePath")),
+                    normalize_employee_text(employee.get("createdAt")) or utc_now(),
+                    normalize_employee_text(employee.get("updatedAt")) or utc_now(),
+                ),
+            )
+
+
+def delete_employee_record(employee_id: str) -> dict[str, Any] | None:
+    with db_connect() as conn:
+        row = conn.execute(
+            """
+            SELECT id, category_key, category_name_mn, category_name_en, source_sheet,
+                   employee_number, sort_order, last_name_en, first_name_en, last_name_mn, first_name_mn,
+                   position_en, position_mn, register_number, email_primary, email_secondary,
+                   phone_primary, phone_secondary, duty_phone, date_of_birth, hire_date,
+                   home_address, notes, extra_info, photo_storage_path, created_at, updated_at
+            FROM employees
+            WHERE id = ?
+            """,
+            (employee_id,),
+        ).fetchone()
+        if not row:
+            return None
+        conn.execute("DELETE FROM employees WHERE id = ?", (employee_id,))
+    return row_to_employee(row)
 
 
 def insert_documents(documents: list[dict[str, Any]]) -> None:
@@ -1283,6 +1591,46 @@ def sanitize_document(document: dict[str, Any]) -> dict[str, Any]:
         "summary": document["summary"],
         "tags": document.get("tags", []),
         "createdAt": document["createdAt"],
+    }
+
+
+def sanitize_employee(employee: dict[str, Any]) -> dict[str, Any]:
+    first_name_en = normalize_employee_text(employee.get("firstNameEn"))
+    last_name_en = normalize_employee_text(employee.get("lastNameEn"))
+    first_name_mn = normalize_employee_text(employee.get("firstNameMn"))
+    last_name_mn = normalize_employee_text(employee.get("lastNameMn"))
+
+    return {
+        "id": employee["id"],
+        "categoryKey": normalize_employee_text(employee.get("categoryKey")),
+        "categoryNameMn": normalize_employee_text(employee.get("categoryNameMn")),
+        "categoryNameEn": normalize_employee_text(employee.get("categoryNameEn")),
+        "sourceSheet": normalize_employee_text(employee.get("sourceSheet")),
+        "employeeNumber": normalize_employee_text(employee.get("employeeNumber")),
+        "sortOrder": int(employee.get("sortOrder") or 0),
+        "lastNameEn": last_name_en,
+        "firstNameEn": first_name_en,
+        "lastNameMn": last_name_mn,
+        "firstNameMn": first_name_mn,
+        "fullNameEn": " ".join(part for part in [first_name_en, last_name_en] if part).strip(),
+        "fullNameMn": " ".join(part for part in [first_name_mn, last_name_mn] if part).strip(),
+        "positionEn": normalize_employee_text(employee.get("positionEn")),
+        "positionMn": normalize_employee_text(employee.get("positionMn")),
+        "registerNumber": normalize_employee_text(employee.get("registerNumber")),
+        "emailPrimary": normalize_employee_text(employee.get("emailPrimary")),
+        "emailSecondary": normalize_employee_text(employee.get("emailSecondary")),
+        "phonePrimary": normalize_employee_text(employee.get("phonePrimary")),
+        "phoneSecondary": normalize_employee_text(employee.get("phoneSecondary")),
+        "dutyPhone": normalize_employee_text(employee.get("dutyPhone")),
+        "dateOfBirth": normalize_employee_text(employee.get("dateOfBirth")),
+        "hireDate": normalize_employee_text(employee.get("hireDate")),
+        "homeAddress": normalize_employee_text(employee.get("homeAddress")),
+        "notes": normalize_employee_text(employee.get("notes")),
+        "extraInfo": normalize_employee_text(employee.get("extraInfo")),
+        "photoStoragePath": normalize_employee_text(employee.get("photoStoragePath")),
+        "hasPhoto": bool(normalize_employee_text(employee.get("photoStoragePath"))),
+        "createdAt": employee["createdAt"],
+        "updatedAt": employee["updatedAt"],
     }
 
 

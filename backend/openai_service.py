@@ -45,6 +45,8 @@ def maybe_generate_openai_answer(
         raise RuntimeError(f"OpenAI API error ({exc.code}): {detail[:300]}") from exc
     except error.URLError as exc:
         raise RuntimeError(f"OpenAI connection failed: {exc.reason}") from exc
+    except (TimeoutError, OSError) as exc:
+        raise RuntimeError(f"OpenAI request timed out: {exc}") from exc
 
     text = extract_response_text(body)
     if not text:
@@ -92,7 +94,7 @@ def maybe_extract_openai_image_text(image_bytes: bytes, mime_type: str) -> str |
     try:
         with request.urlopen(req, timeout=OPENAI_TIMEOUT_SECONDS) as response:
             body = json.loads(response.read().decode("utf-8"))
-    except Exception:
+    except (error.HTTPError, error.URLError, TimeoutError, OSError, ValueError):
         return None
 
     text = extract_response_text(body)

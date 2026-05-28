@@ -11,8 +11,11 @@ from .text_utils import normalize_whitespace
 
 SOSMEDICA_HINTS = (
     "сос медика",
+    "сос мед",
+    "сос медика монгол"
     "sos medica",
     "sosmedica",
+    "sosmed"
 )
 
 SITE_INFO_HINTS = (

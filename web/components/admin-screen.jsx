@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import AdminEmployeesPanel from "@/components/admin-employees-panel";
 import LogoMark from "@/components/logo-mark";
 import { fetchBlob, fetchJson } from "@/lib/api";
 import {
@@ -66,6 +67,7 @@ export default function AdminScreen() {
   const [user, setUser] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [submissions, setSubmissions] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [folders, setFolders] = useState([]);
   const [selectedFolder, setSelectedFolder] = useState("Өвчтөний мэдээлэл");
   const [copyTargets, setCopyTargets] = useState({});
@@ -265,6 +267,22 @@ export default function AdminScreen() {
   const totalPages = Math.max(1, Math.ceil(visibleDocuments.length / pageSize));
   const totalSubmissionPages = Math.max(1, Math.ceil(visibleSubmissions.length / pageSize));
 
+  const employeeCategorySummaries = useMemo(() => {
+    const grouped = new Map();
+    employees.forEach((employee) => {
+      const key = employee.categoryKey || "other";
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          label: employee.categoryNameMn || employee.categoryNameEn || key,
+          count: 0,
+        });
+      }
+      grouped.get(key).count += 1;
+    });
+    return Array.from(grouped.values());
+  }, [employees]);
+
   const pagedDocuments = useMemo(() => {
     const startIndex = (page - 1) * pageSize;
     return visibleDocuments.slice(startIndex, startIndex + pageSize);
@@ -306,6 +324,7 @@ export default function AdminScreen() {
       setUser(response.user);
       setDocuments(response.documents);
       setSubmissions(response.submissions || []);
+      setEmployees(response.employees || []);
       setFolders(response.folders || []);
       setSelectedFolder((current) => current || response.folders?.[0] || "Ерөнхий");
       setNotice({ text: "", tone: "" });
@@ -496,10 +515,6 @@ export default function AdminScreen() {
   }
 
   function handleViewDocument(documentItem) {
-    if (!documentItem.storagePath) {
-      setNotice({ text: "Энэ файлд preview байхгүй байна.", tone: "warning" });
-      return;
-    }
     const query = new URLSearchParams({ id: String(documentItem.id) });
     window.open(`/api/admin/document/file?${query.toString()}`, "_blank", "noopener,noreferrer");
   }
@@ -548,98 +563,143 @@ export default function AdminScreen() {
               </div>
             </div>
 
-            <button
-              className="new-chat-rail-button"
-              type="button"
-              onClick={() => {
-                setViewMode((current) => (current === "documents" ? "submissions" : "documents"));
-                setNotice({ text: "", tone: "" });
-              }}
-            >
-              <span className="new-chat-rail-icon">
-                <GridIcon />
-              </span>
-              <span>{viewMode === "documents" ? "Баримтын мэдээллүүд" : "Файлууд руу буцах"}</span>
-            </button>
+            <div className="admin-nav-stack">
+              <button
+                className={`new-chat-rail-button${viewMode === "documents" ? " active" : ""}`}
+                type="button"
+                onClick={() => {
+                  setViewMode("documents");
+                  setNotice({ text: "", tone: "" });
+                }}
+              >
+                <span className="new-chat-rail-icon">
+                  <FolderIcon />
+                </span>
+                <span>Файлууд</span>
+              </button>
+
+              <button
+                className={`new-chat-rail-button${viewMode === "submissions" ? " active" : ""}`}
+                type="button"
+                onClick={() => {
+                  setViewMode("submissions");
+                  setNotice({ text: "", tone: "" });
+                }}
+              >
+                <span className="new-chat-rail-icon">
+                  <GridIcon />
+                </span>
+                <span>Баримтын мэдээллүүд</span>
+              </button>
+
+              <button
+                className={`new-chat-rail-button${viewMode === "employees" ? " active" : ""}`}
+                type="button"
+                onClick={() => {
+                  setViewMode("employees");
+                  setNotice({ text: "", tone: "" });
+                }}
+              >
+                <span className="new-chat-rail-icon">
+                  <StaffIcon />
+                </span>
+                <span>Ажилчдын хүснэгт</span>
+              </button>
+            </div>
 
             <div className="panel admin-folders-panel admin-clean-panel">
               <div className="admin-section-head">
                 <div>
-                  <h3>Ангиллууд ({visibleFolders.length})</h3>
-                  {/* <span className="pill-muted"></span> */}
+                  <h3>{viewMode === "employees" ? `Ангиллууд (${employeeCategorySummaries.length})` : `Ангиллууд (${visibleFolders.length})`}</h3>
                 </div>
                 <div className="admin-section-actions">
-                  <button
-                    className="icon-button icon-button-soft"
-                    type="button"
-                    aria-label="Folder үүсгэх"
-                    title="Folder үүсгэх"
-                    onClick={handleCreateFolder}
-                  >
-                    <PlusIcon />
-                  </button>
+                  {viewMode === "documents" ? (
+                    <button
+                      className="icon-button icon-button-soft"
+                      type="button"
+                      aria-label="Folder үүсгэх"
+                      title="Folder үүсгэх"
+                      onClick={handleCreateFolder}
+                    >
+                      <PlusIcon />
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
               <div className="folder-stack">
-                {folderSummaries.map((folderItem) => (
-                  <div
-                    className={`folder-row${selectedFolder === folderItem.name ? " active" : ""}`}
-                    key={folderItem.name}
-                  >
-                    <button
-                      type="button"
-                      className="folder-row-main"
-                      onClick={() => setSelectedFolder(folderItem.name)}
-                    >
-                      <span className="folder-row-icon">
-                        <FolderIcon />
-                      </span>
-                      <span className="folder-row-text">
-                        <strong>{folderItem.name}</strong>
-                        <span>{folderItem.count} файл</span>
-                      </span>
-                    </button>
-
+                {viewMode === "employees"
+                  ? employeeCategorySummaries.map((categoryItem) => (
+                    <div className="folder-row active" key={categoryItem.key}>
+                      <div className="folder-row-main">
+                        <span className="folder-row-icon">
+                          <StaffIcon />
+                        </span>
+                        <span className="folder-row-text">
+                          <strong>{categoryItem.label}</strong>
+                          <span>{categoryItem.count} ажилтан</span>
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                  : folderSummaries.map((folderItem) => (
                     <div
-                      className="menu-anchor"
-                      data-admin-menu-root
+                      className={`folder-row${selectedFolder === folderItem.name ? " active" : ""}`}
+                      key={folderItem.name}
                     >
                       <button
                         type="button"
-                        className="icon-button icon-button-quiet"
-                        aria-label={`${folderItem.name} үйлдэл`}
-                        title="Folder үйлдэл"
-                        onClick={() =>
-                          setOpenFolderMenu((current) => (current === folderItem.name ? "" : folderItem.name))
-                        }
+                        className="folder-row-main"
+                        onClick={() => setSelectedFolder(folderItem.name)}
                       >
-                        <MoreIcon />
+                        <span className="folder-row-icon">
+                          <FolderIcon />
+                        </span>
+                        <span className="folder-row-text">
+                          <strong>{folderItem.name}</strong>
+                          <span>{folderItem.count} файл</span>
+                        </span>
                       </button>
 
-                      {openFolderMenu === folderItem.name ? (
-                        <div className="popup-menu">
-                          <button
-                            type="button"
-                            className="popup-menu-item"
-                            onClick={() => void handleRenameFolder(folderItem.name)}
-                          >
-                            <EditIcon />
-                            <span>Нэр солих</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="popup-menu-item danger"
-                            onClick={() => void handleDeleteFolder(folderItem.name)}
-                          >
-                            <TrashIcon />
-                            <span>Устгах</span>
-                          </button>
-                        </div>
-                      ) : null}
+                      <div
+                        className="menu-anchor"
+                        data-admin-menu-root
+                      >
+                        <button
+                          type="button"
+                          className="icon-button icon-button-quiet"
+                          aria-label={`${folderItem.name} үйлдэл`}
+                          title="Folder үйлдэл"
+                          onClick={() =>
+                            setOpenFolderMenu((current) => (current === folderItem.name ? "" : folderItem.name))
+                          }
+                        >
+                          <MoreIcon />
+                        </button>
+
+                        {openFolderMenu === folderItem.name ? (
+                          <div className="popup-menu">
+                            <button
+                              type="button"
+                              className="popup-menu-item"
+                              onClick={() => void handleRenameFolder(folderItem.name)}
+                            >
+                              <EditIcon />
+                              <span>Нэр солих</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="popup-menu-item danger"
+                              onClick={() => void handleDeleteFolder(folderItem.name)}
+                            >
+                              <TrashIcon />
+                              <span>Устгах</span>
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             </div>
 
@@ -685,7 +745,13 @@ export default function AdminScreen() {
               </button>
 
               <div className="admin-header-title">
-                <h1>{viewMode === "submissions" ? "Баримтын мэдээллүүд" : selectedFolder || "Admin panel"}</h1>
+                <h1>
+                  {viewMode === "submissions"
+                    ? "Баримтын мэдээллүүд"
+                    : viewMode === "employees"
+                      ? "Ажилчдын хүснэгт"
+                      : selectedFolder || "Admin panel"}
+                </h1>
               </div>
 
               <div className="admin-header-upload">
@@ -725,46 +791,52 @@ export default function AdminScreen() {
             )}
 
             <div className="admin-stage-scroll">
-              <div className="admin-table-toolbar">
-                <div className="field admin-search-field">
-                  <span>Хайх</span>
-                  <input
-                    type="text"
-                    placeholder={viewMode === "submissions" ? "Файл, и-мэйл, өвчтөний нэр..." : "Файлын нэр, summary..."}
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                  />
+              {viewMode === "employees" ? (
+                <div className="folder-groups admin-documents-view">
+                  <AdminEmployeesPanel employees={employees} setEmployees={setEmployees} setNotice={setNotice} />
                 </div>
+              ) : (
+                <>
+                  <div className="admin-table-toolbar">
+                    <div className="field admin-search-field">
+                      <span>Хайх</span>
+                      <input
+                        type="text"
+                        placeholder={viewMode === "submissions" ? "Файл, и-мэйл, өвчтөний нэр..." : "Файлын нэр, summary..."}
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                      />
+                    </div>
 
-                <div className="field">
-                  <span>Filter</span>
-                  <select
-                    className="field-select field-select-compact"
-                    value={fileFilter}
-                    onChange={(event) => setFileFilter(event.target.value)}
-                  >
-                    <option value="all">Бүгд</option>
-                    <option value="pdf">PDF</option>
-                    <option value="text">Text / CSV / MD</option>
-                    <option value="scan">Scan PDF</option>
-                  </select>
-                </div>
+                    <div className="field">
+                      <span>Filter</span>
+                      <select
+                        className="field-select field-select-compact"
+                        value={fileFilter}
+                        onChange={(event) => setFileFilter(event.target.value)}
+                      >
+                        <option value="all">Бүгд</option>
+                        <option value="pdf">PDF</option>
+                        <option value="text">Text / CSV / MD</option>
+                        <option value="scan">Scan PDF</option>
+                      </select>
+                    </div>
 
-                <div className="field">
-                  <span>Эрэмбэ</span>
-                  <select
-                    className="field-select field-select-compact"
-                    value={sortMode}
-                    onChange={(event) => setSortMode(event.target.value)}
-                  >
-                    <option value="newest">Шинээс</option>
-                    <option value="oldest">Хуучнаас</option>
-                    <option value="name">Нэрээр</option>
-                  </select>
-                </div>
-              </div>
+                    <div className="field">
+                      <span>Эрэмбэ</span>
+                      <select
+                        className="field-select field-select-compact"
+                        value={sortMode}
+                        onChange={(event) => setSortMode(event.target.value)}
+                      >
+                        <option value="newest">Шинээс</option>
+                        <option value="oldest">Хуучнаас</option>
+                        <option value="name">Нэрээр</option>
+                      </select>
+                    </div>
+                  </div>
 
-              <div className="folder-groups admin-documents-view">
+                  <div className="folder-groups admin-documents-view">
                 {viewMode === "documents" ? (
                   visibleDocuments.length ? (
                   <div className="document-list-table">
@@ -993,7 +1065,9 @@ export default function AdminScreen() {
                     </button>
                   </div>
                 ) : null}
-              </div>
+                  </div>
+                </>
+              )}
             </div>
           </section>
         </section>
@@ -1185,6 +1259,17 @@ function GridIcon() {
       <rect x="14" y="3" width="7" height="7" rx="1.5" />
       <rect x="3" y="14" width="7" height="7" rx="1.5" />
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+function StaffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
+      <circle cx="9.5" cy="7" r="3" />
+      <path d="M20 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M15 4.13a4 4 0 0 1 0 7.75" />
     </svg>
   );
 }

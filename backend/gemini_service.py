@@ -57,6 +57,8 @@ def maybe_generate_gemini_answer(
         raise RuntimeError(f"Gemini API error ({exc.code}): {detail[:300]}") from exc
     except error.URLError as exc:
         raise RuntimeError(f"Gemini connection failed: {exc.reason}") from exc
+    except (TimeoutError, OSError) as exc:
+        raise RuntimeError(f"Gemini request timed out: {exc}") from exc
 
     text = extract_gemini_text(body)
     if not text:

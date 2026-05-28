@@ -64,10 +64,14 @@ export function getExtension(filename) {
 }
 
 export function bytesToBase64(bytes) {
+  const chunkSize = 0x8000;
   let binary = "";
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
   return window.btoa(binary);
 }
 

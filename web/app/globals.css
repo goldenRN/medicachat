@@ -886,6 +886,17 @@ h1 {
   font-weight: 400;
 }
 
+.admin-nav-stack {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.admin-nav-stack .new-chat-rail-button.active {
+  background: rgba(61, 99, 221, 0.12);
+  border-color: rgba(61, 99, 221, 0.22);
+  color: var(--primary);
+}
+
 .admin-stage-header {
   padding: 0.2rem 0.2rem 0.7rem;
 }
@@ -1250,6 +1261,216 @@ h1 {
   padding-bottom: 0.72rem;
 }
 
+.employee-panel-head {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.employee-table-toolbar {
+  padding: 0.05rem 0 0.2rem;
+}
+
+.employee-add-button {
+  background: rgba(76, 112, 232, 0.14);
+  border-color: rgba(61, 99, 221, 0.22);
+}
+
+.employee-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.employee-panel-actions .new-chat-rail-button {
+  width: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  min-height: 2.55rem;
+  padding: 0.58rem 0.82rem;
+  border-radius: 13px;
+  font-size: 0.88rem;
+  font-weight: 400;
+  line-height: 1.2;
+  box-shadow: none;
+}
+
+.employee-panel-actions .new-chat-rail-icon {
+  width: 1rem;
+  height: 1rem;
+  font-size: 0.95rem;
+}
+
+.employee-sync-button {
+  background: rgba(255, 255, 255, 0.92);
+  color: #5f6f98;
+  border-color: rgba(97, 118, 168, 0.14);
+}
+
+.employee-table-head,
+.employee-row {
+  grid-template-columns: 5.25rem minmax(13rem, 1.25fr) minmax(13rem, 1.25fr) minmax(12rem, 1.15fr) auto;
+}
+
+.employee-table-shell {
+  gap: 0.6rem;
+}
+
+.employee-table-head {
+  padding: 0.72rem 0.85rem;
+  font-size: 0.76rem;
+}
+
+.employee-row {
+  align-items: stretch;
+  gap: 0.72rem;
+  padding: 0.82rem 0.9rem;
+  border-radius: 20px;
+}
+
+.employee-photo-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.employee-photo-thumb,
+.employee-photo-preview {
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 15px;
+  object-fit: cover;
+  border: 1px solid rgba(97, 118, 168, 0.14);
+  background: #f4f7ff;
+}
+
+.employee-photo-fallback,
+.employee-photo-empty {
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  background: rgba(61, 99, 221, 0.08);
+  color: var(--primary);
+  border: 1px solid rgba(61, 99, 221, 0.16);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.employee-row .document-row-main {
+  gap: 0.28rem;
+}
+
+.employee-row .document-row-main strong {
+  font-size: 0.92rem;
+  line-height: 1.32;
+}
+
+.employee-row .document-meta {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.employee-row .document-folder-badge {
+  margin-top: 0.18rem;
+  padding: 0.24rem 0.48rem;
+  font-size: 0.7rem;
+  border-radius: 999px;
+}
+
+.employee-action-button {
+  min-height: 2.1rem;
+  padding: 0.42rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(97, 118, 168, 0.16);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--primary);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.employee-action-button.danger {
+  color: var(--danger);
+  border-color: rgba(214, 104, 101, 0.18);
+  background: rgba(255, 244, 244, 0.95);
+}
+
+.employee-row .document-row-actions {
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.employee-modal {
+  width: min(100%, 76rem);
+  height: min(100%, 92vh);
+}
+
+.employee-modal-body {
+  padding: 1rem 1.1rem 0.6rem;
+  overflow-y: auto;
+}
+
+.employee-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.field-span-2 {
+  grid-column: 1 / -1;
+}
+
+.employee-form-grid .field {
+  gap: 0.32rem;
+}
+
+.employee-form-grid .field input,
+.employee-form-grid .field textarea,
+.employee-form-grid .field .field-select {
+  width: 100%;
+  min-height: 2.8rem;
+}
+
+.employee-photo-editor {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  align-items: center;
+}
+
+.employee-photo-preview-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.employee-photo-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.employee-upload-button {
+  cursor: pointer;
+}
+
+.employee-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  padding: 0.9rem 1.1rem 1rem;
+  border-top: 1px solid rgba(97, 118, 168, 0.12);
+}
+
+.employee-save-button {
+  min-width: 8.75rem;
+  justify-content: center;
+}
+
 @media (max-width: 1280px) {
   .admin-table-toolbar {
     grid-template-columns: minmax(0, 1.2fr) minmax(9rem, 0.8fr) minmax(9rem, 0.8fr);
@@ -1290,6 +1511,25 @@ h1 {
 
   .document-row-actions {
     justify-content: flex-end;
+  }
+
+  .employee-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-photo-editor {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .employee-panel-actions {
+    justify-content: stretch;
+  }
+
+  .employee-add-button,
+  .employee-sync-button {
+    width: 100%;
+    justify-content: center;
   }
 }
 
