@@ -41,6 +41,143 @@ from .store import list_employees
 from .text_utils import extract_name_from_title, normalize_whitespace, tokenize
 
 
+PERSON_LOOKUP_STOPWORDS = {
+    "hunii",
+    "hun",
+    "khunii",
+    "khun",
+    "tuhai",
+    "talaar",
+    "medeelel",
+    "тухай",
+    "талаар",
+    "мэдээлэл",
+    "гэдэг",
+    "gedeg",
+}
+
+PERSON_TARGET_CLARIFICATION_TEXT = (
+    "Энэ хүний талаар ажилтны мэдээлэл хайх уу, эсвэл өвчтөний баримт мэдээлэл хайх уу?\n\n"
+    "Хэрэв ажилтан бол `ажилтны мэдээлэл`, өвчтөн бол `өвчтөний мэдээлэл` гэж хариулаарай."
+)
+PERSON_TARGET_CLARIFICATION_MARKERS = (
+    "ажилтны мэдээлэл хайх уу",
+    "өвчтөний баримт мэдээлэл хайх уу",
+)
+
+
+def is_explicit_patient_document_question(normalized: str) -> bool:
+    return any(
+        token in normalized
+        for token in (
+            "өвчтөн",
+            "patient",
+            "шинжилгээ",
+            "shinjilgee",
+            "баримт",
+            "barimt",
+            "хариу",
+            "hariu",
+            "онош",
+            "onosh",
+            "үзлэг",
+            "uzeleg",
+            "эмчилгээ",
+            "emchilgee",
+            "зөвлөгөө",
+            "zuvluguu",
+        )
+    )
+
+
+def extract_ambiguous_person_lookup_name(question: str) -> str | None:
+    question_text = normalize_whitespace(str(question or ""))
+    if not question_text:
+        return None
+
+    normalized = normalize_question_for_intent(question_text)
+    if is_employee_question(normalized) or is_explicit_patient_document_question(normalized):
+        return None
+    has_lookup_hint = any(
+        token in normalized
+        for token in ("hunii", "khunii", "тухай", "tuhai", "талаар", "talaar", "мэдээлэл", "medeelel")
+    )
+    if not has_lookup_hint:
+        return None
+
+    raw_tokens = re.findall(r"[A-Za-zА-Яа-яӨөҮүЁё\-]+", question_text)
+    candidate_tokens = [
+        token
+        for token in raw_tokens
+        if len(token) >= 3 and token.lower() not in PERSON_LOOKUP_STOPWORDS
+    ]
+    if len(candidate_tokens) < 2 or len(candidate_tokens) > 4:
+        return None
+
+    return " ".join(candidate_tokens)
+
+
+def build_person_target_clarification(question: str) -> str | None:
+    name = extract_ambiguous_person_lookup_name(question)
+    if not name:
+        return None
+    return f'"{name}" гэж аль төрлийн мэдээлэл хайхыг тодруулаад өгнө үү.\n\n{PERSON_TARGET_CLARIFICATION_TEXT}'
+
+
+def is_person_target_clarification_reply(normalized: str) -> bool:
+    has_employee_choice = (
+        "ажилтан" in normalized
+        or "ажилтны" in normalized
+        or "employee" in normalized
+        or "staff" in normalized
+    )
+    has_patient_choice = "өвчтөн" in normalized or "patient" in normalized
+    return has_employee_choice or has_patient_choice
+
+
+def is_short_person_target_clarification_reply(question: str, normalized: str) -> bool:
+    if not is_person_target_clarification_reply(normalized):
+        return False
+    if is_count_question(normalized) or is_list_question(normalized):
+        return False
+    raw_tokens = tokenize(f"{question} {normalized}")
+    return 0 < len(raw_tokens) <= 4
+
+
+def resolve_effective_question(question: str, history_messages: list[dict[str, Any]] | None = None) -> str:
+    history_messages = history_messages or []
+    normalized = normalize_question_for_intent(question)
+    if not is_short_person_target_clarification_reply(question, normalized):
+        return question
+
+    prior_messages = list(history_messages)
+    if prior_messages and prior_messages[-1].get("role") == "user":
+        last_text = normalize_whitespace(str(prior_messages[-1].get("text", "") or ""))
+        if last_text == normalize_whitespace(question):
+            prior_messages = prior_messages[:-1]
+
+    saw_clarification = False
+    for message in reversed(prior_messages[-8:]):
+        role = str(message.get("role", "") or "")
+        text = normalize_whitespace(str(message.get("text", "") or ""))
+        if not text:
+            continue
+        if not saw_clarification:
+            if role == "bot" and all(marker in text for marker in PERSON_TARGET_CLARIFICATION_MARKERS):
+                saw_clarification = True
+            continue
+        if role != "user":
+            continue
+        name = extract_ambiguous_person_lookup_name(text)
+        if not name:
+            continue
+        if "ажилтан" in normalized or "ажилтны" in normalized or "employee" in normalized or "staff" in normalized:
+            return f"{name} ажилтан"
+        if "өвчтөн" in normalized or "patient" in normalized:
+            return f"{name} баримт"
+    return question
+
+
 def rank_documents(question: str, documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     tokens = extract_query_tokens(question)
     person_query = extract_person_query(question)
@@ -350,6 +487,10 @@ def build_answer(
     if is_greeting_question(question, normalized):
         return build_greeting_answer()
 
+    person_target_clarification = build_person_target_clarification(question)
+    if person_target_clarification:
+        return person_target_clarification
+
     if not has_confident_match(question, ranked_docs):
         return build_no_match_answer(question, history_messages)
 
@@ -561,6 +702,22 @@ def build_aggregate_answer(
         return (
             f"Ажилчдын мэдээлэлтэй {len(counted_documents)} файлаас нийт {total_rows} мөрийн бүртгэл олдлоо.\n\n"
             f"Ашигласан файл: {visible_titles}{suffix}."
+        )
+
+    if is_explicit_patient_document_question(normalized):
+        patient_documents = [document for document in documents if is_likely_person_document(document)]
+        if not patient_documents:
+            return "Өвчтөний мэдээлэлтэй тохирох баримт одоогийн санд олдсонгүй."
+
+        names = [
+            {"name": extract_person_name(document), "title": document["title"]}
+            for document in patient_documents
+            if extract_person_name(document)
+        ]
+        unique_names = dedupe_by_name(names)
+        return (
+            f"Одоогийн санд өвчтөнтэй холбоотой нийт {len(patient_documents)} баримт байна.\n\n"
+            f"Давхардалгүйгээр {len(unique_names)} хүний нэр танигдлаа."
         )
 
     requested_date = resolve_requested_date(normalized, history_messages)

@@ -8,6 +8,7 @@ from .chat_logic import (
     collect_search_terms,
     needs_full_document_scan,
     rank_documents,
+    resolve_effective_question,
     select_reply_documents,
     should_skip_document_search,
 )
@@ -654,29 +655,30 @@ def _handle_chat(handler, body) -> None:
 
     append_message(history["id"], create_message("user", message_text), len(history["messages"]))
     refreshed_before_reply = get_history_by_id(history["id"], session["userId"]) or history
-    if should_skip_document_search(message_text, refreshed_before_reply["messages"]):
+    effective_message_text = resolve_effective_question(message_text, refreshed_before_reply["messages"])
+    if should_skip_document_search(effective_message_text, refreshed_before_reply["messages"]):
         db_search_results = []
     else:
-        db_search_results = search_documents(collect_search_terms(message_text))
+        db_search_results = search_documents(collect_search_terms(effective_message_text))
     documents = merge_documents(chat_documents, db_search_results)
     all_documents = documents
-    if needs_full_document_scan(message_text, refreshed_before_reply["messages"]):
+    if needs_full_document_scan(effective_message_text, refreshed_before_reply["messages"]):
         all_documents = merge_documents(chat_documents, list_documents())
-    ranked_docs = rank_documents(message_text, documents)
+    ranked_docs = rank_documents(effective_message_text, documents)
     reply_documents = select_reply_documents(
-        message_text,
+        effective_message_text,
         ranked_docs,
         all_documents,
         refreshed_before_reply["messages"],
     )
     fallback_reply = build_answer(
-        message_text,
+        effective_message_text,
         ranked_docs,
         all_documents,
         refreshed_before_reply["messages"],
     )
     reply_text, citation_documents = handler.generate_reply_payload(
-        message_text,
+        effective_message_text,
         ranked_docs,
         reply_documents,
         all_documents,

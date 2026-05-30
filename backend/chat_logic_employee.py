@@ -230,6 +230,23 @@ EMPLOYEE_DISTRICT_HINTS = (
     "nkhd",
 )
 
+PATIENT_QUERY_HINT_TOKENS = (
+    "өвчтөн",
+    "patient",
+    "шинжилгээ",
+    "shinjilgee",
+    "хариу",
+    "hariu",
+    "онош",
+    "onosh",
+    "үзлэг",
+    "uzeleg",
+    "эмчилгээ",
+    "emchilgee",
+    "зөвлөгөө",
+    "zuvluguu",
+)
+
 
 def strip_employee_suffix(token: str) -> str:
     current = str(token or "").strip().lower()
@@ -313,6 +330,8 @@ def is_employee_directory_question(
     normalized: str,
     history_messages: list[dict[str, Any]] | None = None,
 ) -> bool:
+    if any(token in normalized for token in PATIENT_QUERY_HINT_TOKENS):
+        return False
     if is_employee_question(normalized) or bool(detect_employee_category_keys(normalized)):
         return True
     if is_employee_count_phrase(normalized):
